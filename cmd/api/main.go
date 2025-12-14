@@ -1,6 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+
+	"github.com/kurisu1024/ledgerly/audit"
+)
 
 func main() {
 	if err := runService(); err != nil {
@@ -9,6 +14,5 @@ func main() {
 }
 
 func runService() error {
-	fmt.Printf("Place holder for running service. \n")
-	return nil
+	return audit.NewService().Run(context.Background())
 }
