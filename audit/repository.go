@@ -9,9 +9,27 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func newAuditEvent(
+	tenantID uuid.UUID,
+	actor json.RawMessage,
+	action string,
+	resource json.RawMessage,
+	metadata json.RawMessage,
+) *AuditEvent {
+	return &AuditEvent{
+		ID:         uuid.New(),
+		TenantID:   tenantID,
+		OccurredAt: time.Now().UTC(),
+		Actor:      actor,
+		Action:     action,
+		Resource:   resource,
+		Metadata:   metadata,
+	}
+}
+
 type AuditEvent struct {
 	ID         uuid.UUID `json:"id"`
-	TenantID   uuid.UUID `json:"tenant-id`
+	TenantID   uuid.UUID `json:"tenant-id"`
 	OccurredAt time.Time `json:"occurred-at"`
 
 	Actor    json.RawMessage `json:"actor"`

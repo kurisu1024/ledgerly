@@ -3,14 +3,17 @@ package audit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kurisu1024/ledgerly/config"
 	"github.com/kurisu1024/ledgerly/db"
+	"github.com/kurisu1024/ledgerly/internal/handlers"
 	"go.uber.org/zap"
 )
 
@@ -54,8 +57,9 @@ func NewService() Service {
 }
 
 type service struct {
-	db   *pgxpool.Pool
-	repo *Repository
+	db    *pgxpool.Pool
+	repo  *Repository
+	queue chan *AuditEvent
 }
 
 // TODO: Implement
@@ -68,11 +72,21 @@ func (s *service) Run(ctx context.Context) error {
 	s.db = pool
 
 	queue := make(chan *AuditEvent, cfg.QueueSize)
+	defer close(queue)
 	workers := make([]Worker, cfg.WorkerCount)
 	for i := 0; i < cfg.WorkerCount; i++ {
 		w := NewBatchInsertWorker(cfg.BatchSize, time.Second, s.RecordEvents, queue).Start(ctx)
 		workers[i] = w
 	}
+
+	handler := handlers.NewHandler(s.RecordEvent)
+
+	router := gin.Default()
+	router.POST("/v1/events", handler.PostEvent)
+	router.GET("/v1/events", handler.GetEvents)
+	router.POST("/v1/verify", handler.PostVerify)
+	router.POST("/v1/exports", handler.PostExport)
+	router.Run(":8080")
 
 	// Stop Workers
 	for _, w := range workers {
@@ -82,19 +96,37 @@ func (s *service) Run(ctx context.Context) error {
 	return nil
 
 }
-func (s *service) RecordEvent(ctx context.Context, e *AuditEvent) error {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return err
+func (s *service) RecordEvent(ctx context.Context, tenantID uuid.UUID, e handlers.CreateEventRequest) (string, string, error) {
+	var actor, resource, metadata json.RawMessage
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	if err := encoder.Encode(e.Actor); err != nil {
+		return "", "", err
 	}
-	defer tx.Rollback(ctx)
+	actor = buffer.Bytes()
+	buffer.Reset()
 
-	err = s.repo.InsertEvent(ctx, tx, e)
-	if err != nil {
-		return err
+	if err := encoder.Encode(e.Resource); err != nil {
+		return "", "", err
 	}
+	resource = buffer.Bytes()
+	buffer.Reset()
 
-	return tx.Commit(ctx)
+	if err := encoder.Encode(e.Metadata); err != nil {
+		return "", "", err
+	}
+	metadata = buffer.Bytes()
+
+	event := newAuditEvent(
+		tenantID,
+		actor,
+		e.Action,
+		resource,
+		metadata,
+	)
+	s.queue <- event
+
+	return event.ID.String(), event.OccurredAt.Format(time.RFC3339), nil
 }
 
 func (s *service) RecordEvents(ctx context.Context, e []*AuditEvent) error {
