@@ -53,7 +53,6 @@ Response:
 {
   "id": "evt_01HXYZ...",
   "occurred_at": "2025-01-15T18:32:11Z",
-  "event_hash": "c4f8b3..."
 }
 ```
 
