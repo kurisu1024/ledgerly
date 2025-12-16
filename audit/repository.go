@@ -10,16 +10,17 @@ import (
 )
 
 type AuditEvent struct {
-	TenantID   uuid.UUID
-	OccurredAt time.Time
+	ID         uuid.UUID `json:"id"`
+	TenantID   uuid.UUID `json:"tenant-id`
+	OccurredAt time.Time `json:"occurred-at"`
 
-	Actor    json.RawMessage
-	Action   string
-	Resource json.RawMessage
-	Metadata json.RawMessage
+	Actor    json.RawMessage `json:"actor"`
+	Action   string          `jsonL:"action"`
+	Resource json.RawMessage `json:"resource"`
+	Metadata json.RawMessage `json:"metadata"`
 
-	PrevHash  []byte
-	EventHash []byte
+	PrevHash  []byte `json:"prev-hash"`
+	EventHash []byte `json:"event-hash"`
 }
 
 type Repository struct{}
