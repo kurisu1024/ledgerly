@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kurisu1024/ledgerly/audit"
+	"github.com/kurisu1024/ledgerly/service"
 )
 
 func main() {
@@ -14,5 +14,5 @@ func main() {
 }
 
 func runService() error {
-	return audit.NewService().Run(context.Background())
+	return service.New().Run(context.Background())
 }
