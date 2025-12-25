@@ -58,17 +58,18 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 	// chainMap is a map of `EventChain` keyed by TenantID.
 	chainMap := make(map[string]EventChain)
 	ticker := time.NewTicker(w.timeout)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case event := <-w.queue:
 			chain, ok := chainMap[event.TenantID.String()]
 			if !ok {
-				chain = newEventChain(w.chainSize)
+				chain = NewEventChain(w.chainSize)
 			}
 
-			chain = appendEvent(chain, event)
-			if len(chain.Events) >= w.chainSize {
+			chain = AppendEvent(chain, event)
+			if len(chain.Events) == w.chainSize {
 				w.write(chain)
 				delete(chainMap, event.TenantID.String())
 

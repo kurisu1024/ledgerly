@@ -1,6 +1,8 @@
 package audit
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"time"
 
@@ -41,11 +43,13 @@ type Event struct {
 }
 
 func SignEvent(e Event) Event {
+	b, _ := json.Marshal(e)
+	_ = json.Unmarshal(b, &e)
 	e.EventHash = computeHash(e)
 	return e
 }
 
-func newEventChain(maxChainSize int) EventChain {
+func NewEventChain(maxChainSize int) EventChain {
 	return EventChain{
 		ID:       uuid.New(),
 		Events:   make([]Event, 0, maxChainSize),
@@ -59,7 +63,7 @@ type EventChain struct {
 	prevHash []byte
 }
 
-func appendEvent(chain EventChain, e Event) EventChain {
+func AppendEvent(chain EventChain, e Event) EventChain {
 	e.ChainID = chain.ID
 	e.PrevHash = chain.prevHash
 	e = SignEvent(e)
@@ -67,4 +71,34 @@ func appendEvent(chain EventChain, e Event) EventChain {
 
 	chain.Events = append(chain.Events, e)
 	return chain
+}
+
+func VerifyEvent(e Event) bool {
+	return bytes.Equal(e.EventHash, computeHash(e))
+}
+
+func VerifyChain(chain EventChain) bool {
+	for i := 0; i < len(chain.Events)-1; i++ {
+		if !VerifyEvent(chain.Events[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+var genesisHash = sha256.Sum256([]byte("GENESIS"))
+
+func computeHash(e Event) []byte {
+	h := sha256.New()
+
+	h.Write([]byte(e.ChainID.String()))
+	h.Write([]byte(e.TenantID.String()))
+	h.Write([]byte(e.OccurredAt.UTC().Format(time.RFC3339Nano)))
+	h.Write(e.Actor)
+	h.Write([]byte(e.Action))
+	h.Write(e.Resource)
+	h.Write(e.Metadata)
+	h.Write(e.PrevHash)
+
+	return h.Sum(nil)
 }
