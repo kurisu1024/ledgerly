@@ -2,7 +2,6 @@ package events
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,17 +34,11 @@ func ToAuditEvent(e Event) (audit.Event, error) {
 	ae.TenantID = uuid.MustParse(e.TenantID)
 	ae.OccurredAt = e.OccurredAt
 	ae.Action = e.Action
-	var err error
-	if ae.Actor, err = e.Actor.ToBytes(); err != nil {
-		return audit.Event{}, fmt.Errorf("failed to marshal actor: %w", err)
-	}
-	if ae.Resource, err = e.Resource.ToBytes(); err != nil {
-		return audit.Event{}, fmt.Errorf("failed to marshal resource: %w", err)
-	}
 
-	if ae.Metadata, err = e.Metadata.ToBytes(); err != nil {
-		return audit.Event{}, fmt.Errorf("failed to marshal metadata: %w", err)
-	}
+	ae.Actor = e.Actor.ToBytes()
+	ae.Resource = e.Resource.ToBytes()
+	ae.Metadata = e.Metadata.ToBytes()
+
 	ae.PrevHash = e.PrevHash
 	ae.EventHash = e.EventHash
 	return ae, nil
@@ -57,8 +50,9 @@ type actor struct {
 	IP   string `json:"ip,omitempty"`
 }
 
-func (a actor) ToBytes() ([]byte, error) {
-	return json.Marshal(a)
+func (a actor) ToBytes() []byte {
+	b, _ := json.Marshal(a)
+	return b
 }
 
 type resource struct {
@@ -66,14 +60,16 @@ type resource struct {
 	ID   string `json:"id"`
 }
 
-func (r resource) ToBytes() ([]byte, error) {
-	return json.Marshal(r)
+func (r resource) ToBytes() []byte {
+	b, _ := json.Marshal(r)
+	return b
 }
 
 type metadata map[string]string
 
-func (m metadata) ToBytes() ([]byte, error) {
-	return json.Marshal(m)
+func (m metadata) ToBytes() []byte {
+	b, _ := json.Marshal(m)
+	return b
 }
 
 func (m metadata) Size() int {

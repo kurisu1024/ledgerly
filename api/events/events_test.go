@@ -51,14 +51,17 @@ func TestToAuditEvent(t *testing.T) {
 		t.Errorf("\t%s\tAudit event OccurredAt does not match api event OccurredAt.", fail)
 	}
 
-	if want, _ := e.Resource.ToBytes(); !bytes.Equal(ae.Resource, want) {
-		t.Errorf("\t%s\tAudit event Resource does not match api event Resource.", fail)
+	if !bytes.Equal(ae.Resource, e.Resource.ToBytes()) {
+		t.Errorf("\t%s\tAudit event Resource does not match api event Resource. audit-event: %s api-event: %s",
+			fail, string(ae.Resource), string(e.Resource.ToBytes()))
 	}
-	if want, _ := e.Actor.ToBytes(); !bytes.Equal(ae.Actor, want) {
-		t.Errorf("\t%s\tAudit event Actor does not match api event Actor.", fail)
+	if !bytes.Equal(ae.Actor, e.Actor.ToBytes()) {
+		t.Errorf("\t%s\tAudit event Actor does not match api event Actor. audit-event: %s api-event: %s",
+			fail, string(ae.Actor), string(e.Actor.ToBytes()))
 	}
-	if want, _ := e.Metadata.ToBytes(); !bytes.Equal(ae.Metadata, want) {
-		t.Errorf("\t%s\tAudit event Metadata does not match api event Metadata.", fail)
+	if !bytes.Equal(ae.Metadata, e.Metadata.ToBytes()) {
+		t.Errorf("\t%s\tAudit event Metadata does not match api event Metadata. audit-event: %s api-event: %s",
+			fail, string(ae.Metadata), string(e.Metadata.ToBytes()))
 	}
 	t.Logf("\t%s\tAudit event fields match api event fields.\n", pass)
 }
