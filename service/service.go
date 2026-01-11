@@ -34,10 +34,6 @@ func newLogger(env string) (*zap.Logger, error) {
 		cfg = zap.NewDevelopmentConfig()
 	}
 
-	cfg.Encoding = "json"
-	cfg.OutputPaths = []string{"stdout"}
-	cfg.ErrorOutputPaths = []string{"stderr"}
-
 	return cfg.Build()
 }
 
@@ -57,11 +53,6 @@ type service struct {
 // Run TODO: Implement
 func (s *service) Run(ctx context.Context) error {
 	cfg := config.Default()
-	//pool, err := db.NewPool(ctx)
-	//if err != nil {
-	//	return fmt.Errorf("failed to connect to database: %w", err)
-	//}
-	//s.db = pool
 
 	queue := make(chan audit.Event, cfg.QueueSize)
 	defer close(queue)
