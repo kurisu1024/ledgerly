@@ -80,7 +80,7 @@ func (s *service) Run(ctx context.Context) error {
 
 }
 func (s *service) RecordEvent(ctx context.Context, tenantID uuid.UUID,
-	actor, resource, metadata json.RawMessage, action string) (string, string, error) {
+	actor, resource, metadata json.RawMessage, action string) (string, string) {
 
 	event := audit.NewEvent(
 		tenantID,
@@ -91,5 +91,5 @@ func (s *service) RecordEvent(ctx context.Context, tenantID uuid.UUID,
 	)
 	s.queue <- event
 
-	return event.ID.String(), event.OccurredAt.Format(time.RFC3339), nil
+	return event.ID.String(), event.OccurredAt.Format(time.RFC3339)
 }
