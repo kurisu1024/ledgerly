@@ -2,6 +2,7 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,9 +30,27 @@ type Event struct {
 
 func ToAuditEvent(e Event) (audit.Event, error) {
 	var ae audit.Event
-	ae.ID = uuid.MustParse(e.ID)
-	ae.ChainID = uuid.MustParse(e.ChainID)
-	ae.TenantID = uuid.MustParse(e.TenantID)
+	var err error
+	if e.ID == "" {
+		ae.ID = uuid.New()
+	} else {
+		if ae.ID, err = uuid.Parse(e.ID); err != nil {
+			return ae, fmt.Errorf("failed to parse event id: %w", err)
+		}
+	}
+
+	if e.ChainID != "" {
+		ae.ChainID, err = uuid.Parse(e.ChainID)
+		if err != nil {
+			return ae, fmt.Errorf("failed to parse chain id: %w", err)
+		}
+	}
+
+	ae.TenantID, err = uuid.Parse(e.TenantID)
+	if err != nil {
+		return ae, fmt.Errorf("failed to parse tenant id: %w", err)
+	}
+
 	ae.OccurredAt = e.OccurredAt
 	ae.Action = e.Action
 
