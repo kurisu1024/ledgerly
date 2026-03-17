@@ -3,7 +3,8 @@ package audit
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
+	"hash"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,10 +12,10 @@ import (
 
 func NewEvent(
 	tenantID uuid.UUID,
-	actor json.RawMessage,
+	actor map[string]string,
 	action string,
-	resource json.RawMessage,
-	metadata json.RawMessage,
+	resource map[string]string,
+	metadata map[string]string,
 ) Event {
 	return Event{
 		ID:         uuid.New(),
@@ -33,20 +34,13 @@ type Event struct {
 	TenantID   uuid.UUID `json:"tenant-id"`
 	OccurredAt time.Time `json:"occurred-at"`
 
-	Actor    json.RawMessage `json:"actor"`
-	Action   string          `jsonL:"action"`
-	Resource json.RawMessage `json:"resource"`
-	Metadata json.RawMessage `json:"metadata"`
+	Actor    map[string]string `json:"actor"`
+	Action   string            `json:"action"`
+	Resource map[string]string `json:"resource"`
+	Metadata map[string]string `json:"metadata"`
 
 	PrevHash  []byte `json:"prev-hash"`
 	EventHash []byte `json:"event-hash"`
-}
-
-func SignEvent(e Event) Event {
-	b, _ := json.Marshal(e)
-	_ = json.Unmarshal(b, &e)
-	e.EventHash = computeHash(e)
-	return e
 }
 
 func NewEventChain(maxChainSize int) EventChain {
@@ -66,7 +60,7 @@ type EventChain struct {
 func AppendEvent(chain EventChain, e Event) EventChain {
 	e.ChainID = chain.ID
 	e.PrevHash = chain.prevHash
-	e = SignEvent(e)
+	e.EventHash = computeHash(e)
 	chain.prevHash = e.EventHash
 
 	chain.Events = append(chain.Events, e)
@@ -94,11 +88,23 @@ func computeHash(e Event) []byte {
 	h.Write([]byte(e.ChainID.String()))
 	h.Write([]byte(e.TenantID.String()))
 	h.Write([]byte(e.OccurredAt.UTC().Format(time.RFC3339Nano)))
-	h.Write(e.Actor)
+	writeMapSorted(h, e.Actor)
 	h.Write([]byte(e.Action))
-	h.Write(e.Resource)
-	h.Write(e.Metadata)
+	writeMapSorted(h, e.Resource)
+	writeMapSorted(h, e.Metadata)
 	h.Write(e.PrevHash)
 
 	return h.Sum(nil)
+}
+
+func writeMapSorted(h hash.Hash, m map[string]string) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(m[k]))
+	}
 }

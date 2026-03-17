@@ -3,6 +3,7 @@ package audit_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,15 +12,31 @@ import (
 
 var pass = "\u2705"
 var fail = "\u274C"
+var (
+	actor = map[string]string{
+		"id":   "user_123",
+		"type": "user",
+		"ip":   "203.0.113.42",
+	}
+	resource = map[string]string{
+		"type": "project",
+		"id":   "proj_123",
+	}
+	metadata = map[string]string{
+		"reason": "user request",
+	}
+)
 
 func TestVerifyNewEvent(t *testing.T) {
 	t.Log("\tGiven a new signed event.")
-	event := audit.NewEvent(uuid.New(), []byte(`{"id": "user_123", "type": "user", "ip": "203.0.113.42"}`),
-		"project.create", []byte(` {"type": "project", "id": "proj_456" }`), []byte(`{ "reason": "user request" }`))
+	event := audit.NewEvent(uuid.New(), actor, "project.create", resource, metadata)
 	{
 		t.Logf("\tWhen event is signed.\n")
 	}
-	event = audit.SignEvent(event)
+
+	chain := audit.NewEventChain(10)
+	chain = audit.AppendEvent(chain, event)
+	event = chain.Events[0]
 	{
 		t.Logf("\tEvent should pass verification.\n")
 		if !audit.VerifyEvent(event) {
@@ -59,8 +76,9 @@ func TestVerifyChain(t *testing.T) {
 	{
 		t.Logf("\t%s\tWhen chain is loaded with events.\n", pass)
 		for i := 0; i < chainSize; i++ {
-			event := audit.NewEvent(uuid.New(), []byte(fmt.Sprintf("{\"id\": \"user-%v\", \"type\": \"user\", \"ip\": \"203.0.113.42\"}", i)),
-				"project.create", []byte(` {"type": "project", "id": "proj_456" }`), []byte(`{ "reason": "user request" }`))
+			a := maps.Clone(actor)
+			a["id"] = fmt.Sprintf("user-%v", i)
+			event := audit.NewEvent(uuid.New(), a, "project.create", resource, metadata)
 			c = audit.AppendEvent(c, event)
 		}
 	}
