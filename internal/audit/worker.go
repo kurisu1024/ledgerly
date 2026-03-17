@@ -69,10 +69,11 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 			}
 
 			chain = AppendEvent(chain, event)
+			chainMap[event.TenantID.String()] = chain
+
 			if len(chain.Events) == w.chainSize {
 				w.write(chain)
 				delete(chainMap, event.TenantID.String())
-
 			}
 		case <-ticker.C:
 			for _, chain := range chainMap {
@@ -83,8 +84,8 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 		case <-ctx.Done():
 			for _, chain := range chainMap {
 				w.write(chain)
-				return
 			}
+			return
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package events_test
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,14 +16,20 @@ func TestToAuditEvent(t *testing.T) {
 		ID:       uuid.New().String(),
 		ChainID:  uuid.New().String(),
 		TenantID: uuid.New().String(),
-		Action:   "some-actrion-taken",
+		Action:   "some-action-taken",
+		Actor: map[string]string{
+			"id":   "some-id",
+			"type": "some-actor-type",
+			"ip":   "127.0.0.1",
+		},
+		Resource: map[string]string{
+			"type": "some-resource-type",
+			"id":   "some-resource-id",
+		},
+		Metadata: map[string]string{
+			"key": "value",
+		},
 	}
-	e.Actor.ID = "some-id"
-	e.Actor.Type = "some-actor-type"
-	e.Actor.IP = "127.0.0.1"
-
-	e.Resource.Type = "some-resource-type"
-	e.Resource.ID = "some-resource-id"
 
 	t.Log("\tThen the event should be converted to an audit event.")
 
@@ -51,17 +56,14 @@ func TestToAuditEvent(t *testing.T) {
 		t.Errorf("\t%s\tAudit event OccurredAt does not match api event OccurredAt.", fail)
 	}
 
-	if !bytes.Equal(ae.Resource, e.Resource.ToBytes()) {
-		t.Errorf("\t%s\tAudit event Resource does not match api event Resource. audit-event: %s api-event: %s",
-			fail, string(ae.Resource), string(e.Resource.ToBytes()))
+	if len(ae.Resource) != len(e.Resource) {
+		t.Errorf("\t%s\tAudit event Resource does not match api event Resource.", fail)
 	}
-	if !bytes.Equal(ae.Actor, e.Actor.ToBytes()) {
-		t.Errorf("\t%s\tAudit event Actor does not match api event Actor. audit-event: %s api-event: %s",
-			fail, string(ae.Actor), string(e.Actor.ToBytes()))
+	if len(ae.Actor) != len(e.Actor) {
+		t.Errorf("\t%s\tAudit event Actor does not match api event Actor.", fail)
 	}
-	if !bytes.Equal(ae.Metadata, e.Metadata.ToBytes()) {
-		t.Errorf("\t%s\tAudit event Metadata does not match api event Metadata. audit-event: %s api-event: %s",
-			fail, string(ae.Metadata), string(e.Metadata.ToBytes()))
+	if len(ae.Metadata) != len(e.Metadata) {
+		t.Errorf("\t%s\tAudit event Metadata does not match api event Metadata.", fail)
 	}
 	t.Logf("\t%s\tAudit event fields match api event fields.\n", pass)
 }

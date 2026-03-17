@@ -82,12 +82,17 @@ func (s *service) Run(ctx context.Context) error {
 func (s *service) RecordEvent(ctx context.Context, tenantID uuid.UUID,
 	actor, resource, metadata json.RawMessage, action string) (string, string) {
 
+	var actorMap, resourceMap, metadataMap map[string]string
+	json.Unmarshal(actor, &actorMap)
+	json.Unmarshal(resource, &resourceMap)
+	json.Unmarshal(metadata, &metadataMap)
+
 	event := audit.NewEvent(
 		tenantID,
-		actor,
+		actorMap,
 		action,
-		resource,
-		metadata,
+		resourceMap,
+		metadataMap,
 	)
 	s.queue <- event
 
