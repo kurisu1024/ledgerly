@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"crypto/rsa"
 	"net/http"
 	"time"
 
@@ -11,11 +12,12 @@ import (
 )
 
 type T struct {
-	mux     *http.ServeMux
-	storage storage.Storage
-	queue   chan audit.Event
-	worker  audit.Worker
-	logger  *zap.Logger
+	mux       *http.ServeMux
+	storage   storage.Storage
+	queue     chan audit.Event
+	worker    audit.Worker
+	logger    *zap.Logger
+	jwtSecret *rsa.PublicKey // Public key for JWT verification
 }
 
 func (t *T) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +30,8 @@ type Config struct {
 	ChainSize int
 	// FlushInterval is how often the worker flushes partial chains to storage
 	FlushInterval time.Duration
+	// JWTPublicKey is the RSA public key for verifying JWT tokens (optional for now)
+	JWTPublicKey *rsa.PublicKey
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -57,16 +61,17 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	).Start(ctx)
 
 	t := &T{
-		mux:     http.NewServeMux(),
-		storage: stor,
-		queue:   queue,
-		worker:  worker,
-		logger:  logger,
+		mux:       http.NewServeMux(),
+		storage:   stor,
+		queue:     queue,
+		worker:    worker,
+		logger:    logger,
+		jwtSecret: cfg.JWTPublicKey,
 	}
 
-	// Register routes
-	t.mux.HandleFunc("POST /tenants/{tenantID}/events", t.CreateEvent)
-	t.mux.HandleFunc("GET /tenants/{tenantID}/events", t.ExportEvents)
+	// Register routes with JWT auth middleware
+	t.mux.HandleFunc("POST /v1/events", t.authMiddleware(t.CreateEvent))
+	t.mux.HandleFunc("GET /v1/export", t.authMiddleware(t.ExportEvents))
 
 	return t
 }

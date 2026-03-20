@@ -10,18 +10,13 @@ import (
 )
 
 // CreateEvent handles POST requests to create a new event for a specific tenant.
-// URL format: POST /tenants/{tenantID}/events
+// URL format: POST /v1/events
+// Tenant ID is extracted from JWT token via auth middleware
 func (t *T) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract tenant ID from URL path
-	tenantIDStr := r.PathValue("tenantID")
-	tenantID, err := uuid.Parse(tenantIDStr)
+	// Extract tenant ID from context (set by auth middleware)
+	tenantID, err := getTenantID(r.Context())
 	if err != nil {
-		http.Error(w, "Invalid tenant ID", http.StatusBadRequest)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -59,18 +54,13 @@ func (t *T) CreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExportEvents handles GET requests to export all events for a specific tenant.
-// URL format: GET /tenants/{tenantID}/events?blockID=uuid (optional)
+// URL format: GET /v1/export?blockID=uuid (optional)
+// Tenant ID is extracted from JWT token via auth middleware
 func (t *T) ExportEvents(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract tenant ID from URL path
-	tenantIDStr := r.PathValue("tenantID")
-	tenantID, err := uuid.Parse(tenantIDStr)
+	// Extract tenant ID from context (set by auth middleware)
+	tenantID, err := getTenantID(r.Context())
 	if err != nil {
-		http.Error(w, "Invalid tenant ID", http.StatusBadRequest)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
