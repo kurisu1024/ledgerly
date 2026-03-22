@@ -13,6 +13,7 @@ import (
 
 type T struct {
 	mux       *http.ServeMux
+	handler   http.Handler // Wrapped handler with middleware
 	storage   storage.Storage
 	queue     chan audit.Event
 	worker    audit.Worker
@@ -21,7 +22,7 @@ type T struct {
 }
 
 func (t *T) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	t.mux.ServeHTTP(w, r)
+	t.handler.ServeHTTP(w, r)
 }
 
 // Config holds configuration for the HTTP server.
@@ -60,8 +61,10 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 		logger,
 	).Start(ctx)
 
+	mux := http.NewServeMux()
+
 	t := &T{
-		mux:       http.NewServeMux(),
+		mux:       mux,
 		storage:   stor,
 		queue:     queue,
 		worker:    worker,
@@ -70,8 +73,11 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	}
 
 	// Register routes with JWT auth middleware
-	t.mux.HandleFunc("POST /v1/events", t.authMiddleware(t.CreateEvent))
-	t.mux.HandleFunc("GET /v1/export", t.authMiddleware(t.ExportEvents))
+	mux.HandleFunc("POST /v1/events", t.authMiddleware(t.CreateEvent))
+	mux.HandleFunc("GET /v1/export", t.authMiddleware(t.ExportEvents))
+
+	// Wrap mux with logging middleware
+	t.handler = loggingMiddleware(logger)(mux)
 
 	return t
 }

@@ -27,6 +27,10 @@ go.work.sum
 # env file
 .env
 
-Editor/IDE
+# Export files from make commands
+export.json
+.tenant_id
+
+# Editor/IDE
 .idea/
 .vscode/
