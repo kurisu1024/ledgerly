@@ -84,7 +84,7 @@ func parseJWT(tokenString string, publicKey *rsa.PublicKey) (*JWTClaims, error) 
 	}
 
 	// TODO: Add signature verification using publicKey when needed
-	// For now, we're keeping it simple as requested
+	// For now, we're keeping it simple.
 
 	return &claims, nil
 }

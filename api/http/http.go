@@ -77,10 +77,11 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 }
 
 // Close gracefully shuts down the server, stopping the worker and closing the queue.
-func (t *T) Close() {
+func (t *T) Close() error {
 	t.logger.Info("shutting down HTTP server")
 	t.worker.Stop()
 	close(t.queue)
+	return nil
 }
 
 func (t *T) handle(pattern string, handler http.Handler) {

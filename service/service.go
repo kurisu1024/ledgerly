@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
+	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/kurisu1024/ledgerly/config"
+	httpapi "github.com/kurisu1024/ledgerly/api/http"
 	"github.com/kurisu1024/ledgerly/internal/audit"
+	"github.com/kurisu1024/ledgerly/internal/storage/memory"
 	"go.uber.org/zap"
 )
 
@@ -43,58 +44,45 @@ type Service interface {
 }
 
 func New() Service {
-	return &service{}
+	return &T{}
 }
 
-type service struct {
+type T struct {
 	queue chan audit.Event
 }
 
-// Run TODO: Implement
-func (s *service) Run(ctx context.Context) error {
-	cfg := config.Default()
+// Run starts the HTTP server and listens for requests until context is cancelled
+func (s *T) Run(ctx context.Context) error {
+	// Create HTTP API handler
+	handler := httpapi.New(ctx, memory.New(), httpapi.DefaultConfig(), log)
+	defer handler.Close()
 
-	queue := make(chan audit.Event, cfg.QueueSize)
-	defer close(queue)
-	workers := make([]audit.Worker, cfg.WorkerCount)
-	for i := 0; i < cfg.WorkerCount; i++ {
-		w := audit.NewBatchInsertWorker(cfg.ChainSize, time.Second, audit.NoOpEventChainWriter{}, queue, log).Start(ctx)
-		workers[i] = w
+	// Create HTTP server
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: handler,
 	}
 
-	//handler := handlers.NewHandler(s.RecordEvent)
-	//
-	//router := gin.Default()
-	//router.POST("/v1/events", handler.PostEvent)
-	//router.GET("/v1/events", handler.GetEvents)
-	//router.POST("/v1/verify", handler.PostVerify)
-	//router.POST("/v1/exports", handler.PostExport)
-	//router.Run(":8080")
+	// Channel to capture server errors
+	errChan := make(chan error, 1)
 
-	// Stop Workers
-	for _, w := range workers {
-		w.Stop()
+	// Start server in goroutine
+	go func() {
+		log.Info("Starting HTTP server", zap.String("addr", server.Addr))
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errChan <- err
+		}
+	}()
+
+	// Wait for context cancellation or server error
+	select {
+	case <-ctx.Done():
+		log.Info("Shutting down HTTP server")
+		// Graceful shutdown with 5 second timeout
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
+	case err := <-errChan:
+		return err
 	}
-
-	return nil
-
-}
-func (s *service) RecordEvent(ctx context.Context, tenantID uuid.UUID,
-	actor, resource, metadata json.RawMessage, action string) (string, string) {
-
-	var actorMap, resourceMap, metadataMap map[string]string
-	json.Unmarshal(actor, &actorMap)
-	json.Unmarshal(resource, &resourceMap)
-	json.Unmarshal(metadata, &metadataMap)
-
-	event := audit.NewEvent(
-		tenantID,
-		actorMap,
-		action,
-		resourceMap,
-		metadataMap,
-	)
-	s.queue <- event
-
-	return event.ID.String(), event.OccurredAt.Format(time.RFC3339)
 }
