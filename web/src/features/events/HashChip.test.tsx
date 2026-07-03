@@ -34,6 +34,7 @@ describe("HashChip", () => {
   test("chip is keyboard-focusable", () => {
     render(<HashChip hash={FULL_HASH} />);
     const chip = screen.getByRole("button");
-    expect(chip).toHaveAttribute("tabIndex", "0");
+    chip.focus();
+    expect(chip).toHaveFocus();
   });
 });

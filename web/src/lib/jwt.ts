@@ -15,7 +15,7 @@ export type DecodeJwtResult =
  */
 export function decodeJwtPayload(token: string): DecodeJwtResult {
   const segments = token.split(".");
-  if (segments.length < 3 || !segments[1]) {
+  if (segments.length !== 3 || !segments[1]) {
     return {
       ok: false,
       error: "token does not have the expected header.payload.signature segment format",

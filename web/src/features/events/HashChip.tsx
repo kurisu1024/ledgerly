@@ -21,9 +21,7 @@ export function HashChip({ hash }: HashChipProps): ReactNode {
     <button
       type="button"
       className="hash-chip"
-      tabIndex={0}
-      aria-expanded={expanded}
-      title={hash}
+      aria-pressed={expanded}
       onClick={() => setExpanded((prev) => !prev)}
     >
       {expanded ? hash : truncate(hash)}
