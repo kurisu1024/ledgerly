@@ -32,11 +32,22 @@ export async function verifyChain(events: ApiEvent[]): Promise<VerifyResult> {
     if (event["tenant-id"] !== tenantId) {
       return { status: "tampered", failedIndex: index, reason: "tenant-mixed" };
     }
+    // Fail closed: hashEvent throws on unparseable occurred-at or non-base64
+    // prev-hash. That must surface as a tampered/malformed verdict — never as
+    // a rejection, which would blank verification for every chain when the
+    // viewer awaits results via Promise.all. Computed before the link check
+    // so structurally-invalid data reads as "malformed", not "link-broken".
+    let recomputed: string;
+    try {
+      recomputed = await hashEvent(event);
+    } catch {
+      return { status: "tampered", failedIndex: index, reason: "malformed" };
+    }
+
     if (event["prev-hash"] !== prevHash) {
       return { status: "tampered", failedIndex: index, reason: "link-broken" };
     }
 
-    const recomputed = await hashEvent(event);
     if (recomputed !== event["event-hash"]) {
       return { status: "tampered", failedIndex: index, reason: "hash-mismatch" };
     }

@@ -58,3 +58,34 @@ describe("verifyChain", () => {
     });
   });
 });
+
+// Security regression (review finding): malformed event data must FAIL CLOSED.
+// verifyChain must resolve to tampered/malformed, never reject — an unhandled
+// rejection from one bad event would blank verification for every chain in
+// the viewer (Promise.all) and escape the fail-closed contract.
+describe("verifyChain fail-closed on malformed input", () => {
+  const validEvents = () => {
+    const validCase = fixtures.cases.find((c) => c.name === "valid-nano")!;
+    return structuredClone(validCase.chain.events) as ApiEvent[];
+  };
+
+  test("unparseable occurred-at yields tampered/malformed, not a rejection", async () => {
+    const events = validEvents();
+    events[1]!["occurred-at"] = "not-a-timestamp";
+    await expect(verifyChain(events)).resolves.toEqual({
+      status: "tampered",
+      failedIndex: 1,
+      reason: "malformed",
+    });
+  });
+
+  test("non-base64 prev-hash yields tampered/malformed, not a rejection", async () => {
+    const events = validEvents();
+    events[2]!["prev-hash"] = "%%%not-base64%%%";
+    await expect(verifyChain(events)).resolves.toEqual({
+      status: "tampered",
+      failedIndex: 2,
+      reason: "malformed",
+    });
+  });
+});

@@ -29,7 +29,12 @@ export type VerifyResult =
   | {
       status: "tampered";
       failedIndex: number;
-      reason: "hash-mismatch" | "link-broken" | "foreign-chain" | "tenant-mixed";
+      reason:
+        | "hash-mismatch"
+        | "link-broken"
+        | "foreign-chain"
+        | "tenant-mixed"
+        | "malformed";
     }
   | { status: "unverifiable"; reason: "empty" };
 
