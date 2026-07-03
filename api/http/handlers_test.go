@@ -3,14 +3,13 @@ package http_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	apihttp "github.com/kurisu1024/ledgerly/api/http"
 	"github.com/kurisu1024/ledgerly/internal/storage/memory"
@@ -24,7 +23,7 @@ func TestCreateEvent(t *testing.T) {
 
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
-	cfg := apihttp.DefaultConfig()
+	cfg := testConfig()
 	server := apihttp.New(ctx, store, cfg, logger)
 	defer server.Close()
 
@@ -93,7 +92,7 @@ func TestExportEvents(t *testing.T) {
 
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
-	cfg := apihttp.DefaultConfig()
+	cfg := testConfig()
 	cfg.FlushInterval = 100 * time.Millisecond
 	server := apihttp.New(ctx, store, cfg, logger)
 	defer server.Close()
@@ -169,7 +168,7 @@ func TestMissingAuthHeader(t *testing.T) {
 
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
-	cfg := apihttp.DefaultConfig()
+	cfg := testConfig()
 	server := apihttp.New(ctx, store, cfg, logger)
 	defer server.Close()
 
@@ -197,7 +196,7 @@ func TestInvalidTenantID(t *testing.T) {
 
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
-	cfg := apihttp.DefaultConfig()
+	cfg := testConfig()
 	server := apihttp.New(ctx, store, cfg, logger)
 	defer server.Close()
 
@@ -206,19 +205,13 @@ func TestInvalidTenantID(t *testing.T) {
 		event := Event{Action: "test"}
 		eventJSON, _ := json.Marshal(event)
 
-		// Create JWT with invalid tenant ID
-		header := map[string]string{"alg": "RS256", "typ": "JWT"}
-		headerJSON, _ := json.Marshal(header)
-		headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-		payload := map[string]interface{}{
+		// Properly signed token with an invalid tenant ID, so the failure
+		// exercised is the tenant check, not the signature check.
+		invalidJWT := signJWT(jwt.MapClaims{
 			"tenant_id": "invalid-uuid",
 			"sub":       "test-user",
-		}
-		payloadJSON, _ := json.Marshal(payload)
-		payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-		signature := base64.RawURLEncoding.EncodeToString([]byte("dummy"))
-		invalidJWT := fmt.Sprintf("%s.%s.%s", headerB64, payloadB64, signature)
+			"exp":       time.Now().Add(time.Hour).Unix(),
+		})
 
 		req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewReader(eventJSON))
 		req.Header.Set("Authorization", "Bearer "+invalidJWT)

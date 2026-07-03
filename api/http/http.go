@@ -19,6 +19,9 @@ type T struct {
 	worker    audit.Worker
 	logger    *zap.Logger
 	jwtSecret *rsa.PublicKey // Public key for JWT verification
+	// allowUnverifiedJWT accepts decode-only tokens when no public key is
+	// configured. Dev mode only; never the default.
+	allowUnverifiedJWT bool
 }
 
 func (t *T) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -31,8 +34,13 @@ type Config struct {
 	ChainSize int
 	// FlushInterval is how often the worker flushes partial chains to storage
 	FlushInterval time.Duration
-	// JWTPublicKey is the RSA public key for verifying JWT tokens (optional for now)
+	// JWTPublicKey is the RSA public key for verifying JWT tokens. When set,
+	// every token's RS256 signature and expiry are verified.
 	JWTPublicKey *rsa.PublicKey
+	// AllowUnverifiedJWT accepts tokens without signature verification when
+	// no JWTPublicKey is configured. For local development only — with no
+	// key and this flag false, every request is rejected with 401.
+	AllowUnverifiedJWT bool
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -64,12 +72,21 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	mux := http.NewServeMux()
 
 	t := &T{
-		mux:       mux,
-		storage:   stor,
-		queue:     queue,
-		worker:    worker,
-		logger:    logger,
-		jwtSecret: cfg.JWTPublicKey,
+		mux:                mux,
+		storage:            stor,
+		queue:              queue,
+		worker:             worker,
+		logger:             logger,
+		jwtSecret:          cfg.JWTPublicKey,
+		allowUnverifiedJWT: cfg.AllowUnverifiedJWT,
+	}
+
+	if cfg.JWTPublicKey == nil {
+		if cfg.AllowUnverifiedJWT {
+			logger.Warn("JWT signature verification DISABLED (AllowUnverifiedJWT) — dev mode only, never run this in production")
+		} else {
+			logger.Error("no JWT public key configured and AllowUnverifiedJWT is false — every request will be rejected with 401")
+		}
 	}
 
 	// Register routes with JWT auth middleware
