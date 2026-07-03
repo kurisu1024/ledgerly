@@ -1,8 +1,16 @@
 
 
 .PHONY: test
-test:
+test: test-go test-web
+
+.PHONY: test-go
+test-go:
 	go fmt ./... && go vet ./... && go test -v -p=1 -cover ./...
+
+.PHONY: test-web
+test-web:
+	@if [ ! -d web/node_modules ]; then npm --prefix web ci; fi
+	npm --prefix web run test:run
 
 .PHONY: run
 run:
