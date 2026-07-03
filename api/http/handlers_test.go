@@ -126,8 +126,9 @@ func TestExportEvents(t *testing.T) {
 		}
 		t.Logf("\t%s\tSuccessfully created event\n", pass)
 
-		// Wait for worker to process and flush
-		time.Sleep(200 * time.Millisecond)
+		if err := server.Flush(ctx); err != nil {
+			t.Fatalf("\t%s\tFailed to flush worker: %v", fail, err)
+		}
 	}
 
 	var events []Event
