@@ -12,13 +12,13 @@ import (
 )
 
 type T struct {
-	mux       *http.ServeMux
-	handler   http.Handler // Wrapped handler with middleware
-	storage   storage.Storage
-	queue     chan audit.Event
-	worker    audit.Worker
-	logger    *zap.Logger
-	jwtSecret *rsa.PublicKey // Public key for JWT verification
+	mux          *http.ServeMux
+	handler      http.Handler // Wrapped handler with middleware
+	storage      storage.Storage
+	queue        chan audit.Event
+	worker       audit.Worker
+	logger       *zap.Logger
+	jwtPublicKey *rsa.PublicKey // Public key for JWT verification
 	// allowUnverifiedJWT accepts decode-only tokens when no public key is
 	// configured. Dev mode only; never the default.
 	allowUnverifiedJWT bool
@@ -77,7 +77,7 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 		queue:              queue,
 		worker:             worker,
 		logger:             logger,
-		jwtSecret:          cfg.JWTPublicKey,
+		jwtPublicKey:       cfg.JWTPublicKey,
 		allowUnverifiedJWT: cfg.AllowUnverifiedJWT,
 	}
 

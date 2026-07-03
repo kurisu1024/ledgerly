@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type contextKey string
@@ -18,8 +19,12 @@ type contextKey string
 const tenantIDKey contextKey = "tenantID"
 
 // jwtLeeway absorbs small clock skew between the token issuer and this server
-// when validating exp/nbf.
+// when validating exp/nbf/iat.
 const jwtLeeway = 30 * time.Second
+
+// maxTokenLifetime caps exp-iat so a misconfigured or compromised issuer
+// cannot mint effectively non-expiring credentials.
+const maxTokenLifetime = 24 * time.Hour
 
 // JWTClaims represents the claims we extract from the JWT token
 type JWTClaims struct {
@@ -48,6 +53,9 @@ func (t *T) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		claims, err := t.parseJWT(tokenString)
 		if err != nil {
+			// Generic response to the caller; full detail server-side.
+			t.logger.Warn("rejected JWT",
+				zap.Error(err), zap.String("remote_addr", r.RemoteAddr))
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
@@ -55,6 +63,8 @@ func (t *T) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Validate tenant ID
 		tenantID, err := uuid.Parse(claims.TenantID)
 		if err != nil {
+			t.logger.Warn("rejected JWT: invalid tenant ID claim",
+				zap.Error(err), zap.String("remote_addr", r.RemoteAddr))
 			http.Error(w, "Invalid tenant ID in token", http.StatusUnauthorized)
 			return
 		}
@@ -69,20 +79,27 @@ func (t *T) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 //
 // With a public key configured, the signature is verified (RS256 only —
 // pinning the method defeats alg-confusion and alg=none attacks), exp is
-// required, and exp/nbf are validated with jwtLeeway of skew. Without a key,
-// tokens are accepted decode-only when AllowUnverifiedJWT was set (dev mode);
-// otherwise every token is rejected.
+// required, iat (when present) must not be in the future, exp-iat is capped
+// at maxTokenLifetime, and time claims get jwtLeeway of skew. Without a key,
+// tokens are accepted decode-only when AllowUnverifiedJWT was set (dev mode)
+// — note dev mode performs NO claim validation, including expiry; otherwise
+// every token is rejected.
 func (t *T) parseJWT(tokenString string) (*JWTClaims, error) {
-	if t.jwtSecret != nil {
+	if t.jwtPublicKey != nil {
 		claims := &JWTClaims{}
 		_, err := jwt.ParseWithClaims(tokenString, claims,
-			func(token *jwt.Token) (any, error) { return t.jwtSecret, nil },
+			func(token *jwt.Token) (any, error) { return t.jwtPublicKey, nil },
 			jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 			jwt.WithExpirationRequired(),
+			jwt.WithIssuedAt(),
 			jwt.WithLeeway(jwtLeeway),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("verifying token: %w", err)
+		}
+		if claims.IssuedAt != nil && claims.ExpiresAt != nil &&
+			claims.ExpiresAt.Sub(claims.IssuedAt.Time) > maxTokenLifetime {
+			return nil, fmt.Errorf("token lifetime exceeds %s", maxTokenLifetime)
 		}
 		return claims, nil
 	}

@@ -144,6 +144,18 @@ func TestJWTSignatureVerification(t *testing.T) {
 		{"garbage token", func(t *testing.T) string {
 			return "not.a.jwt"
 		}, http.StatusUnauthorized},
+
+		{"iat in the future", func(t *testing.T) string {
+			claims := validClaims()
+			claims["iat"] = time.Now().Add(time.Hour).Unix()
+			return signJWT(claims)
+		}, http.StatusUnauthorized},
+
+		{"lifetime beyond the 24h cap", func(t *testing.T) string {
+			claims := validClaims()
+			claims["exp"] = time.Now().Add(10 * 365 * 24 * time.Hour).Unix()
+			return signJWT(claims)
+		}, http.StatusUnauthorized},
 	}
 
 	for _, tt := range tests {
