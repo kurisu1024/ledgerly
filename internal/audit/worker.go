@@ -82,10 +82,30 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 			chainMap = make(map[string]EventChain)
 
 		case <-ctx.Done():
-			for _, chain := range chainMap {
-				w.write(chain)
+			// Drain events already queued (and 202-acknowledged) before
+			// flushing, so shutdown never loses accepted events.
+			for {
+				select {
+				case event := <-w.queue:
+					chain, ok := chainMap[event.TenantID.String()]
+					if !ok {
+						chain = NewEventChain(w.chainSize)
+					}
+
+					chain = AppendEvent(chain, event)
+					chainMap[event.TenantID.String()] = chain
+
+					if len(chain.Events) == w.chainSize {
+						w.write(chain)
+						delete(chainMap, event.TenantID.String())
+					}
+				default:
+					for _, chain := range chainMap {
+						w.write(chain)
+					}
+					return
+				}
 			}
-			return
 		}
 	}
 }
