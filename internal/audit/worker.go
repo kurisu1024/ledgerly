@@ -45,6 +45,9 @@ func (w *batchInsertWorker) Stop() {
 }
 
 func (w *batchInsertWorker) Start(ctx context.Context) Worker {
+	// Assign cancel before spawning the goroutine so Stop, called from
+	// another goroutine, never observes it nil or unsynchronized.
+	ctx, w.cancel = context.WithCancel(ctx)
 	w.wg = sync.WaitGroup{}
 	w.wg.Add(1)
 	go w.start(ctx)
@@ -52,7 +55,6 @@ func (w *batchInsertWorker) Start(ctx context.Context) Worker {
 }
 
 func (w *batchInsertWorker) start(ctx context.Context) {
-	ctx, w.cancel = context.WithCancel(ctx)
 	defer w.wg.Done()
 
 	// chainMap is a map of `EventChain` keyed by TenantID.
