@@ -1,4 +1,25 @@
 import type { ApiEvent, NewApiEvent, PostEventResult } from "./types";
+import { ApiError, AuthError, RetryableError } from "./types";
+
+async function request(url: string, init: RequestInit): Promise<Response> {
+  const response = await fetch(url, init);
+  if (response.ok) {
+    return response;
+  }
+
+  const message = (await response.text()).trim();
+
+  if (response.status === 401) {
+    throw new AuthError(message || "Unauthorized");
+  }
+  if (response.status === 503) {
+    throw new RetryableError(message || "Service unavailable, retry later");
+  }
+  throw new ApiError(
+    message || `Request to ${url} failed with status ${response.status}`,
+    response.status,
+  );
+}
 
 /**
  * GET /v1/export, optionally sliced to a single block via `?blockID=`.
@@ -6,10 +27,14 @@ import type { ApiEvent, NewApiEvent, PostEventResult } from "./types";
  * parse them through `Date` (see lib/verify/canonicalTime.ts).
  */
 export async function exportEvents(
-  _token: string,
-  _blockId?: string,
+  token: string,
+  blockId?: string,
 ): Promise<ApiEvent[]> {
-  throw new Error("not implemented");
+  const url = blockId ? `/v1/export?blockID=${blockId}` : "/v1/export";
+  const response = await request(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return (await response.json()) as ApiEvent[];
 }
 
 /**
@@ -17,8 +42,16 @@ export async function exportEvents(
  * the server never synchronously confirms persistence.
  */
 export async function postEvent(
-  _token: string,
-  _event: NewApiEvent,
+  token: string,
+  event: NewApiEvent,
 ): Promise<PostEventResult> {
-  throw new Error("not implemented");
+  await request("/v1/events", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(event),
+  });
+  return { state: "accepted" };
 }
