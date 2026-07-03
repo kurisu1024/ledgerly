@@ -65,18 +65,7 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 	for {
 		select {
 		case event := <-w.queue:
-			chain, ok := chainMap[event.TenantID.String()]
-			if !ok {
-				chain = NewEventChain(w.chainSize)
-			}
-
-			chain = AppendEvent(chain, event)
-			chainMap[event.TenantID.String()] = chain
-
-			if len(chain.Events) == w.chainSize {
-				w.write(chain)
-				delete(chainMap, event.TenantID.String())
-			}
+			w.ingest(chainMap, event)
 		case <-ticker.C:
 			for _, chain := range chainMap {
 				w.write(chain)
@@ -89,18 +78,7 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 			for {
 				select {
 				case event := <-w.queue:
-					chain, ok := chainMap[event.TenantID.String()]
-					if !ok {
-						chain = NewEventChain(w.chainSize)
-					}
-
-					chain = AppendEvent(chain, event)
-					chainMap[event.TenantID.String()] = chain
-
-					if len(chain.Events) == w.chainSize {
-						w.write(chain)
-						delete(chainMap, event.TenantID.String())
-					}
+					w.ingest(chainMap, event)
 				default:
 					for _, chain := range chainMap {
 						w.write(chain)
@@ -109,6 +87,23 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+// ingest appends the event to its tenant's chain, writing and evicting the
+// chain when it reaches chainSize.
+func (w *batchInsertWorker) ingest(chainMap map[string]EventChain, event Event) {
+	chain, ok := chainMap[event.TenantID.String()]
+	if !ok {
+		chain = NewEventChain(w.chainSize)
+	}
+
+	chain = AppendEvent(chain, event)
+	chainMap[event.TenantID.String()] = chain
+
+	if len(chain.Events) == w.chainSize {
+		w.write(chain)
+		delete(chainMap, event.TenantID.String())
 	}
 }
 

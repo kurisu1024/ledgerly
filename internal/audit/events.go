@@ -78,11 +78,27 @@ func VerifyEvent(e Event) bool {
 	return bytes.Equal(e.EventHash, computeHash(e))
 }
 
-// VerifyChain checks every event's own hash and its linkage to the previous
-// event, anchored at the genesis hash. Any tamper, reorder, or removal fails.
+// VerifyChain checks that every event belongs to this chain and a single
+// tenant, re-hashes each event, and verifies linkage anchored at the genesis
+// hash. Tampering, reordering, removal from the front or middle, and splicing
+// events from another chain all fail. An empty chain is not verifiable —
+// blocks are only ever written with at least one event, so an empty stored
+// chain means the events were stripped.
+//
+// Limitation: truncating events from the tail leaves a valid prefix, which
+// still verifies. Detecting tail truncation requires an external anchor
+// (e.g. storage recording the expected head hash), which this function
+// cannot provide on its own.
 func VerifyChain(chain EventChain) bool {
+	if len(chain.Events) == 0 {
+		return false
+	}
+	tenantID := chain.Events[0].TenantID
 	prev := genesisHash[:]
 	for _, e := range chain.Events {
+		if e.ChainID != chain.ID || e.TenantID != tenantID {
+			return false
+		}
 		if !bytes.Equal(e.PrevHash, prev) {
 			return false
 		}

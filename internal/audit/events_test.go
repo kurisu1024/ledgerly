@@ -72,13 +72,14 @@ func TestVerifyChain(t *testing.T) {
 	var chainSize = 10
 	t.Logf("\tGiven new chain of size %v with unique events", chainSize)
 	c := audit.NewEventChain(chainSize)
+	tenantID := uuid.New()
 
 	{
 		t.Logf("\t%s\tWhen chain is loaded with events.\n", pass)
 		for i := 0; i < chainSize; i++ {
 			a := maps.Clone(actor)
 			a["id"] = fmt.Sprintf("user-%v", i)
-			event := audit.NewEvent(uuid.New(), a, "project.create", resource, metadata)
+			event := audit.NewEvent(tenantID, a, "project.create", resource, metadata)
 			c = audit.AppendEvent(c, event)
 		}
 	}
@@ -113,10 +114,11 @@ func TestVerifyChain(t *testing.T) {
 func TestVerifyChainTamper(t *testing.T) {
 	newChain := func(n int) audit.EventChain {
 		c := audit.NewEventChain(n)
+		tenantID := uuid.New()
 		for i := 0; i < n; i++ {
 			a := maps.Clone(actor)
 			a["id"] = fmt.Sprintf("user-%v", i)
-			c = audit.AppendEvent(c, audit.NewEvent(uuid.New(), a, "project.create", resource, metadata))
+			c = audit.AppendEvent(c, audit.NewEvent(tenantID, a, "project.create", resource, metadata))
 		}
 		return c
 	}
@@ -145,6 +147,21 @@ func TestVerifyChainTamper(t *testing.T) {
 			c.Events = append(c.Events[:1], c.Events[2:]...)
 			return c
 		}},
+		{"all events stripped", func(c audit.EventChain) audit.EventChain {
+			c.Events = nil
+			return c
+		}},
+		{"foreign chain spliced in wholesale", func(c audit.EventChain) audit.EventChain {
+			other := newChain(3)
+			c.Events = other.Events
+			return c
+		}},
+		{"foreign tenant's event appended", func(c audit.EventChain) audit.EventChain {
+			e := c.Events[len(c.Events)-1]
+			e.TenantID = uuid.New()
+			c.Events = append(c.Events, e)
+			return c
+		}},
 	}
 
 	for _, tt := range tests {
@@ -160,7 +177,8 @@ func TestVerifyChainTamper(t *testing.T) {
 
 func TestAppendAfterUnmarshal(t *testing.T) {
 	c := audit.NewEventChain(10)
-	c = audit.AppendEvent(c, audit.NewEvent(uuid.New(), actor, "project.create", resource, metadata))
+	tenantID := uuid.New()
+	c = audit.AppendEvent(c, audit.NewEvent(tenantID, actor, "project.create", resource, metadata))
 
 	b, err := json.Marshal(c)
 	if err != nil {
@@ -171,7 +189,7 @@ func TestAppendAfterUnmarshal(t *testing.T) {
 		t.Fatalf("\t%s\tFailed to unmarshal chain: %v", fail, err)
 	}
 
-	restored = audit.AppendEvent(restored, audit.NewEvent(uuid.New(), actor, "project.update", resource, metadata))
+	restored = audit.AppendEvent(restored, audit.NewEvent(tenantID, actor, "project.update", resource, metadata))
 	if !audit.VerifyChain(restored) {
 		t.Fatalf("\t%s\tChain appended after unmarshal failed verification", fail)
 	}
