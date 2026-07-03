@@ -3,7 +3,8 @@ package http_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	apihttp "github.com/kurisu1024/ledgerly/api/http"
 	"github.com/kurisu1024/ledgerly/internal/storage/memory"
@@ -35,27 +37,40 @@ type Event struct {
 	EventHash  []byte            `json:"event-hash,omitempty"`
 }
 
-// createJWT creates a simple JWT token for testing (no signature verification)
-func createJWT(tenantID uuid.UUID) string {
-	// Header
-	header := map[string]string{"alg": "RS256", "typ": "JWT"}
-	headerJSON, _ := json.Marshal(header)
-	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+// testKey signs test JWTs; servers built with testConfig verify against its
+// public half.
+var testKey = func() *rsa.PrivateKey {
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}()
 
-	// Payload
-	payload := map[string]interface{}{
+// testConfig is DefaultConfig with signature verification enabled.
+func testConfig() apihttp.Config {
+	cfg := apihttp.DefaultConfig()
+	cfg.JWTPublicKey = &testKey.PublicKey
+	return cfg
+}
+
+// createJWT creates an RS256-signed JWT for testing.
+func createJWT(tenantID uuid.UUID) string {
+	return signJWT(jwt.MapClaims{
 		"tenant_id": tenantID.String(),
 		"sub":       "test-user",
 		"iat":       time.Now().Unix(),
 		"exp":       time.Now().Add(1 * time.Hour).Unix(),
+	})
+}
+
+// signJWT signs arbitrary claims with the test key.
+func signJWT(claims jwt.MapClaims) string {
+	s, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(testKey)
+	if err != nil {
+		panic(err)
 	}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	// Signature (dummy for testing)
-	signature := base64.RawURLEncoding.EncodeToString([]byte("dummy-signature"))
-
-	return fmt.Sprintf("%s.%s.%s", headerB64, payloadB64, signature)
+	return s
 }
 
 func TestEndToEnd_CreateAndExportEvents(t *testing.T) {
@@ -71,6 +86,7 @@ func TestEndToEnd_CreateAndExportEvents(t *testing.T) {
 		QueueSize:     100,
 		ChainSize:     3,                      // Small chain size to trigger writes quickly
 		FlushInterval: 100 * time.Millisecond, // Fast flush for testing
+		JWTPublicKey:  &testKey.PublicKey,
 	}
 
 	server := apihttp.New(ctx, store, cfg, logger)
@@ -171,6 +187,7 @@ func TestEndToEnd_MultipleTenants(t *testing.T) {
 		QueueSize:     100,
 		ChainSize:     2,
 		FlushInterval: 100 * time.Millisecond,
+		JWTPublicKey:  &testKey.PublicKey,
 	}
 
 	server := apihttp.New(ctx, store, cfg, logger)
@@ -255,6 +272,7 @@ func TestEndToEnd_GracefulShutdown(t *testing.T) {
 		QueueSize:     100,
 		ChainSize:     100,           // Large chain so events stay in memory
 		FlushInterval: 1 * time.Hour, // Very long interval
+		JWTPublicKey:  &testKey.PublicKey,
 	}
 
 	server := apihttp.New(ctx, store, cfg, logger)

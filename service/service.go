@@ -53,8 +53,12 @@ type T struct {
 
 // Run starts the HTTP server and listens for requests until context is cancelled
 func (s *T) Run(ctx context.Context) error {
-	// Create HTTP API handler
-	handler := httpapi.New(ctx, memory.New(), httpapi.DefaultConfig(), log)
+	// Create HTTP API handler. This is the dev composition (in-memory
+	// storage, hardcoded port), so it explicitly opts in to unverified JWTs
+	// to keep `make load-events` working without a signing key.
+	cfg := httpapi.DefaultConfig()
+	cfg.AllowUnverifiedJWT = true
+	handler := httpapi.New(ctx, memory.New(), cfg, log)
 	defer handler.Close()
 
 	// Create HTTP server
