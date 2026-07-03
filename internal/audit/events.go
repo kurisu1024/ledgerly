@@ -45,23 +45,30 @@ type Event struct {
 
 func NewEventChain(maxChainSize int) EventChain {
 	return EventChain{
-		ID:       uuid.New(),
-		Events:   make([]Event, 0, maxChainSize),
-		prevHash: genesisHash[:],
+		ID:     uuid.New(),
+		Events: make([]Event, 0, maxChainSize),
 	}
 }
 
 type EventChain struct {
-	ID       uuid.UUID `json:"id"`
-	Events   []Event   `json:"events"`
-	prevHash []byte
+	ID     uuid.UUID `json:"id"`
+	Events []Event   `json:"events"`
+}
+
+// headHash returns the hash the next appended event must link to. Deriving it
+// from Events (rather than a hidden field) keeps chain state intact across
+// JSON round-trips.
+func headHash(chain EventChain) []byte {
+	if n := len(chain.Events); n > 0 {
+		return chain.Events[n-1].EventHash
+	}
+	return genesisHash[:]
 }
 
 func AppendEvent(chain EventChain, e Event) EventChain {
 	e.ChainID = chain.ID
-	e.PrevHash = chain.prevHash
+	e.PrevHash = headHash(chain)
 	e.EventHash = computeHash(e)
-	chain.prevHash = e.EventHash
 
 	chain.Events = append(chain.Events, e)
 	return chain
@@ -71,11 +78,34 @@ func VerifyEvent(e Event) bool {
 	return bytes.Equal(e.EventHash, computeHash(e))
 }
 
+// VerifyChain checks that every event belongs to this chain and a single
+// tenant, re-hashes each event, and verifies linkage anchored at the genesis
+// hash. Tampering, reordering, removal from the front or middle, and splicing
+// events from another chain all fail. An empty chain is not verifiable —
+// blocks are only ever written with at least one event, so an empty stored
+// chain means the events were stripped.
+//
+// Limitation: truncating events from the tail leaves a valid prefix, which
+// still verifies. Detecting tail truncation requires an external anchor
+// (e.g. storage recording the expected head hash), which this function
+// cannot provide on its own.
 func VerifyChain(chain EventChain) bool {
-	for i := 0; i < len(chain.Events)-1; i++ {
-		if !VerifyEvent(chain.Events[i]) {
+	if len(chain.Events) == 0 {
+		return false
+	}
+	tenantID := chain.Events[0].TenantID
+	prev := genesisHash[:]
+	for _, e := range chain.Events {
+		if e.ChainID != chain.ID || e.TenantID != tenantID {
 			return false
 		}
+		if !bytes.Equal(e.PrevHash, prev) {
+			return false
+		}
+		if !VerifyEvent(e) {
+			return false
+		}
+		prev = e.EventHash
 	}
 	return true
 }

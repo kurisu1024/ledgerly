@@ -45,6 +45,9 @@ func (w *batchInsertWorker) Stop() {
 }
 
 func (w *batchInsertWorker) Start(ctx context.Context) Worker {
+	// Assign cancel before spawning the goroutine so Stop, called from
+	// another goroutine, never observes it nil or unsynchronized.
+	ctx, w.cancel = context.WithCancel(ctx)
 	w.wg = sync.WaitGroup{}
 	w.wg.Add(1)
 	go w.start(ctx)
@@ -52,7 +55,6 @@ func (w *batchInsertWorker) Start(ctx context.Context) Worker {
 }
 
 func (w *batchInsertWorker) start(ctx context.Context) {
-	ctx, w.cancel = context.WithCancel(ctx)
 	defer w.wg.Done()
 
 	// chainMap is a map of `EventChain` keyed by TenantID.
@@ -63,18 +65,7 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 	for {
 		select {
 		case event := <-w.queue:
-			chain, ok := chainMap[event.TenantID.String()]
-			if !ok {
-				chain = NewEventChain(w.chainSize)
-			}
-
-			chain = AppendEvent(chain, event)
-			chainMap[event.TenantID.String()] = chain
-
-			if len(chain.Events) == w.chainSize {
-				w.write(chain)
-				delete(chainMap, event.TenantID.String())
-			}
+			w.ingest(chainMap, event)
 		case <-ticker.C:
 			for _, chain := range chainMap {
 				w.write(chain)
@@ -82,11 +73,37 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 			chainMap = make(map[string]EventChain)
 
 		case <-ctx.Done():
-			for _, chain := range chainMap {
-				w.write(chain)
+			// Drain events already queued (and 202-acknowledged) before
+			// flushing, so shutdown never loses accepted events.
+			for {
+				select {
+				case event := <-w.queue:
+					w.ingest(chainMap, event)
+				default:
+					for _, chain := range chainMap {
+						w.write(chain)
+					}
+					return
+				}
 			}
-			return
 		}
+	}
+}
+
+// ingest appends the event to its tenant's chain, writing and evicting the
+// chain when it reaches chainSize.
+func (w *batchInsertWorker) ingest(chainMap map[string]EventChain, event Event) {
+	chain, ok := chainMap[event.TenantID.String()]
+	if !ok {
+		chain = NewEventChain(w.chainSize)
+	}
+
+	chain = AppendEvent(chain, event)
+	chainMap[event.TenantID.String()] = chain
+
+	if len(chain.Events) == w.chainSize {
+		w.write(chain)
+		delete(chainMap, event.TenantID.String())
 	}
 }
 
