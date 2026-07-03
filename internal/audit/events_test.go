@@ -109,3 +109,71 @@ func TestVerifyChain(t *testing.T) {
 	}
 
 }
+
+func TestVerifyChainTamper(t *testing.T) {
+	newChain := func(n int) audit.EventChain {
+		c := audit.NewEventChain(n)
+		for i := 0; i < n; i++ {
+			a := maps.Clone(actor)
+			a["id"] = fmt.Sprintf("user-%v", i)
+			c = audit.AppendEvent(c, audit.NewEvent(uuid.New(), a, "project.create", resource, metadata))
+		}
+		return c
+	}
+
+	tests := []struct {
+		name   string
+		tamper func(c audit.EventChain) audit.EventChain
+	}{
+		{"tampered last event", func(c audit.EventChain) audit.EventChain {
+			c.Events[len(c.Events)-1].Action = "project.delete"
+			return c
+		}},
+		{"tampered middle event", func(c audit.EventChain) audit.EventChain {
+			c.Events[1].Action = "project.delete"
+			return c
+		}},
+		{"reordered events", func(c audit.EventChain) audit.EventChain {
+			c.Events[0], c.Events[1] = c.Events[1], c.Events[0]
+			return c
+		}},
+		{"first event dropped", func(c audit.EventChain) audit.EventChain {
+			c.Events = c.Events[1:]
+			return c
+		}},
+		{"middle event dropped", func(c audit.EventChain) audit.EventChain {
+			c.Events = append(c.Events[:1], c.Events[2:]...)
+			return c
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := tt.tamper(newChain(3))
+			if audit.VerifyChain(c) {
+				t.Fatalf("\t%s\tChain passed verification after tampering: %s", fail, tt.name)
+			}
+			t.Logf("\t%s\tTampering detected: %s", pass, tt.name)
+		})
+	}
+}
+
+func TestAppendAfterUnmarshal(t *testing.T) {
+	c := audit.NewEventChain(10)
+	c = audit.AppendEvent(c, audit.NewEvent(uuid.New(), actor, "project.create", resource, metadata))
+
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("\t%s\tFailed to marshal chain: %v", fail, err)
+	}
+	var restored audit.EventChain
+	if err := json.Unmarshal(b, &restored); err != nil {
+		t.Fatalf("\t%s\tFailed to unmarshal chain: %v", fail, err)
+	}
+
+	restored = audit.AppendEvent(restored, audit.NewEvent(uuid.New(), actor, "project.update", resource, metadata))
+	if !audit.VerifyChain(restored) {
+		t.Fatalf("\t%s\tChain appended after unmarshal failed verification", fail)
+	}
+	t.Logf("\t%s\tChain state survived serialization.", pass)
+}
