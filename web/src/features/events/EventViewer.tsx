@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 interface EventViewerProps {
   token: string;
 }
@@ -10,6 +11,6 @@ interface EventViewerProps {
  * aggregation UI — the only slice available is the API's own `blockID`
  * filter (see CONTEXT.md's prove-it/explore-it scope guard).
  */
-export function EventViewer(_props: EventViewerProps) {
+export function EventViewer(_props: EventViewerProps): ReactNode {
   throw new Error("not implemented");
 }

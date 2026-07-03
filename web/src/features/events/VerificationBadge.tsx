@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { VerifyResult } from "../../lib/verify/types";
 
 interface VerificationBadgeProps {
@@ -9,6 +10,6 @@ interface VerificationBadgeProps {
  * A "verified" badge always carries VerifyChain's tail-truncation caveat —
  * the client cannot detect a chain whose tail was silently dropped.
  */
-export function VerificationBadge(_props: VerificationBadgeProps) {
+export function VerificationBadge(_props: VerificationBadgeProps): ReactNode {
   throw new Error("not implemented");
 }

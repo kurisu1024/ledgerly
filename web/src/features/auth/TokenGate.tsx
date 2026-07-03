@@ -19,6 +19,6 @@ interface TokenGateProps {
  * Decoding is display-only (lib/jwt.ts); the server remains the sole
  * authority on token validity.
  */
-export function TokenGate(_props: TokenGateProps) {
+export function TokenGate(_props: TokenGateProps): ReactNode {
   throw new Error("not implemented");
 }
