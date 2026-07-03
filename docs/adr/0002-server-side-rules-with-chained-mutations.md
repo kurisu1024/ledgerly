@@ -34,4 +34,18 @@ rules capture.
   not the instant each SDK instance adopted it. SDKs should report their active
   rule-set version on startup as an audit event to narrow this window.
 - The rules store is new state to persist; in-memory first, Postgres alongside the
-  event store in Phase B.
+  event store (minimal wiring lands in Phase A per CONTEXT.md).
+
+## Amendments (grilling session, 2026-07-03)
+
+- **Server-enforced baseline triggers.** A tenant admin must not be able to "turn off
+  the cameras": a small built-in trigger floor is evaluated server-side and cannot be
+  disabled or narrowed by tenant rules — v1 floor: auth failures, rule mutations,
+  admin/destructive API actions. Tenant-defined rules are purely additive on top.
+  A rogue admin can still silence their own app's logs (client-side evaluation can
+  always be bypassed by whoever owns the app), but everything the *server* witnesses
+  is captured regardless of the rule-set.
+- **Generalized: the control plane audits itself.** Rule-mutation chaining is one
+  instance of a broader rule — *any* server-observed state change (rules, tenant
+  config, admin actions, auth outcomes) is chained automatically, no rule required, no
+  opt-out.

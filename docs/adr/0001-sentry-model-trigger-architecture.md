@@ -36,3 +36,24 @@ outcomes).
   kept small; the conformance suite is the guard against drift.
 - SDK delivery must never slow the host app or silently drop events: async batched
   sends, spill to a local disk buffer on failure, retry.
+
+## Amendments (grilling session, 2026-07-03)
+
+- **Cold start:** the SDK constructor *requires* a compiled-in fallback rule-set —
+  the handler cannot be constructed without one. It applies until the first successful
+  rules fetch; the startup active-rules event records that the fallback was in effect
+  and for how long. Neither fail-open (evidence gap at boot) nor fail-closed (unbounded
+  capture) is acceptable.
+- **Gap detectability:** every event carries a per-SDK-instance ID and a monotonic
+  sequence number (persisted alongside the disk buffer) inside the *hashed* payload,
+  from day one — adding them later would be a chain-format change. Pre-chain loss
+  cannot be prevented without synchronous writes, but the chain evidences its own gaps:
+  a sequence jump proves events existed that never arrived, and when.
+- **Self-suppression:** the SDK's own internal logging is categorically untriggerable,
+  in every SDK, forever — required for dogfooding (Ledgerly running the SDK inside its
+  own services) not to recurse.
+- **Recovery, not rebuild (Phase B):** outage-recovery tooling drains SDK disk buffers
+  and ingests stragglers as append-only *late arrivals* (original timestamps and
+  sequence numbers intact) plus an explicit gap-closure event. Chains are never
+  rebuilt or retroactively inserted into; verification treats a healed gap differently
+  from an open one.
