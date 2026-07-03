@@ -13,12 +13,12 @@ export default function App() {
       </header>
       <main className="app-main">
         <TokenGate>
-          {({ token, tenantId }) => (
+          {({ token, tenantId, resetSession }) => (
             <>
               <p className="app-main__tenant">
                 Tenant <code>{tenantId}</code>
               </p>
-              <EventViewer token={token} />
+              <EventViewer token={token} onResetSession={resetSession} />
             </>
           )}
         </TokenGate>

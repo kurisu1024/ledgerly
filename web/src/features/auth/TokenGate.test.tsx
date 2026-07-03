@@ -83,6 +83,30 @@ describe("TokenGate", () => {
     expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
   });
 
+  test("resetSession clears the stored token and returns to the paste form", async () => {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, VALID_TOKEN);
+    const user = userEvent.setup();
+
+    render(
+      <TokenGate>
+        {({ resetSession }) => (
+          <button type="button" onClick={resetSession}>
+            Use a different token
+          </button>
+        )}
+      </TokenGate>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: /use a different token/i }),
+    );
+
+    expect(
+      screen.getByRole("textbox", { name: /token/i }),
+    ).toBeInTheDocument();
+    expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
   test("renders children immediately when a valid token is already in sessionStorage", async () => {
     sessionStorage.setItem(TOKEN_STORAGE_KEY, VALID_TOKEN);
 

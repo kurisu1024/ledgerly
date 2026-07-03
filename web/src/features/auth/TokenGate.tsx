@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { decodeJwtPayload } from "../../lib/jwt";
 
@@ -7,6 +7,8 @@ export const TOKEN_STORAGE_KEY = "ledgerly.token";
 export interface TokenGateSession {
   token: string;
   tenantId: string;
+  /** Clears the stored token and returns the gate to its paste form. */
+  resetSession: () => void;
 }
 
 interface TokenGateProps {
@@ -14,7 +16,12 @@ interface TokenGateProps {
   children: (session: TokenGateSession) => ReactNode;
 }
 
-function sessionFromStoredToken(token: string): TokenGateSession | null {
+interface StoredSession {
+  token: string;
+  tenantId: string;
+}
+
+function sessionFromStoredToken(token: string): StoredSession | null {
   const decoded = decodeJwtPayload(token);
   return decoded.ok ? { token, tenantId: decoded.tenantId } : null;
 }
@@ -27,15 +34,22 @@ function sessionFromStoredToken(token: string): TokenGateSession | null {
  * authority on token validity.
  */
 export function TokenGate({ children }: TokenGateProps): ReactNode {
-  const [session, setSession] = useState<TokenGateSession | null>(() => {
+  const [session, setSession] = useState<StoredSession | null>(() => {
     const stored = sessionStorage.getItem(TOKEN_STORAGE_KEY);
     return stored ? sessionFromStoredToken(stored) : null;
   });
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const resetSession = useCallback(() => {
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    setDraft("");
+    setError(null);
+    setSession(null);
+  }, []);
+
   if (session) {
-    return <>{children(session)}</>;
+    return <>{children({ ...session, resetSession })}</>;
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
