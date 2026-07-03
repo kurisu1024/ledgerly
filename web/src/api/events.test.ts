@@ -152,7 +152,7 @@ describe("postEvent", () => {
     // @ts-expect-error -- "persisted" must not be assignable to state; this
     // line exists to fail type-checking if the union ever grows that variant.
     const impossible: "persisted" = result.state;
-    expect(impossible).not.toBe(result.state);
+    expect(impossible).not.toBe("persisted");
   });
 
   test("throws AuthError on 401", async () => {
