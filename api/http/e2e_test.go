@@ -111,10 +111,11 @@ func TestEndToEnd_CreateAndExportEvents(t *testing.T) {
 		}
 		t.Logf("\t%s\tSuccessfully queued %d events\n", pass, eventCount)
 
-		// Wait for worker to process and flush events to storage
-		// We created 5 events with chain size 3, so we should have 2 chains written
-		// (1 full chain of 3 + 1 partial chain of 2 after flush interval)
-		time.Sleep(500 * time.Millisecond)
+		// 5 events with chain size 3 → 1 full chain written on ingest,
+		// 1 partial chain of 2 written by the flush.
+		if err := server.Flush(ctx); err != nil {
+			t.Fatalf("\t%s\tFailed to flush worker: %v", fail, err)
+		}
 	}
 
 	var exportedEvents []Event
@@ -209,8 +210,9 @@ func TestEndToEnd_MultipleTenants(t *testing.T) {
 		}
 		t.Logf("\t%s\tSuccessfully queued events for multiple tenants\n", pass)
 
-		// Wait for worker to process
-		time.Sleep(500 * time.Millisecond)
+		if err := server.Flush(ctx); err != nil {
+			t.Fatalf("\t%s\tFailed to flush worker: %v", fail, err)
+		}
 	}
 
 	{

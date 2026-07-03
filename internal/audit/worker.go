@@ -12,6 +12,10 @@ import (
 type Worker interface {
 	Start(ctx context.Context) Worker
 	Stop()
+	// Flush persists every event accepted before the call, blocking until
+	// the write completes or ctx expires. The deterministic alternative to
+	// waiting out FlushInterval.
+	Flush(ctx context.Context) error
 }
 
 type batchInsertFunc func(ctx context.Context, e []*Event) error
@@ -24,6 +28,7 @@ func NewBatchInsertWorker(chainSize int, timeout time.Duration, chainWriter Even
 		timeout:   timeout,
 		logger:    log.With(zap.String("category", "worker-"+uuid.New().String())),
 		w:         chainWriter,
+		flushCh:   make(chan chan struct{}),
 	}
 }
 
@@ -32,6 +37,7 @@ type batchInsertWorker struct {
 	chainSize  int
 	timeout    time.Duration
 	cancel     context.CancelFunc
+	flushCh    chan chan struct{}
 	insertFunc batchInsertFunc
 	logger     *zap.Logger
 	wg         sync.WaitGroup
@@ -67,27 +73,55 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 		case event := <-w.queue:
 			w.ingest(chainMap, event)
 		case <-ticker.C:
-			for _, chain := range chainMap {
-				w.write(chain)
-			}
-			chainMap = make(map[string]EventChain)
-
+			w.flushAll(chainMap)
+		case done := <-w.flushCh:
+			w.drain(chainMap)
+			w.flushAll(chainMap)
+			close(done)
 		case <-ctx.Done():
 			// Drain events already queued (and 202-acknowledged) before
 			// flushing, so shutdown never loses accepted events.
-			for {
-				select {
-				case event := <-w.queue:
-					w.ingest(chainMap, event)
-				default:
-					for _, chain := range chainMap {
-						w.write(chain)
-					}
-					return
-				}
-			}
+			w.drain(chainMap)
+			w.flushAll(chainMap)
+			return
 		}
 	}
+}
+
+// Flush asks the worker to persist every event accepted before the call.
+func (w *batchInsertWorker) Flush(ctx context.Context) error {
+	done := make(chan struct{})
+	select {
+	case w.flushCh <- done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// drain ingests everything already buffered in the queue without blocking.
+func (w *batchInsertWorker) drain(chainMap map[string]EventChain) {
+	for {
+		select {
+		case event := <-w.queue:
+			w.ingest(chainMap, event)
+		default:
+			return
+		}
+	}
+}
+
+// flushAll writes every accumulated chain and resets the map.
+func (w *batchInsertWorker) flushAll(chainMap map[string]EventChain) {
+	for _, chain := range chainMap {
+		w.write(chain)
+	}
+	clear(chainMap)
 }
 
 // ingest appends the event to its tenant's chain, writing and evicting the

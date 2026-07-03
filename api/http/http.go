@@ -82,6 +82,12 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	return t
 }
 
+// Flush persists every event accepted before the call. It blocks until the
+// worker has written the events or ctx expires.
+func (t *T) Flush(ctx context.Context) error {
+	return t.worker.Flush(ctx)
+}
+
 // Close gracefully shuts down the server, stopping the worker and closing the queue.
 func (t *T) Close() error {
 	t.logger.Info("shutting down HTTP server")
