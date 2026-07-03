@@ -74,6 +74,31 @@ describe("exportEvents", () => {
     expect(event!["occurred-at"]).toBe("2026-01-15T10:30:00.123456789Z");
   });
 
+  // Go's export handler json.Marshal's a nil slice, so a tenant with no
+  // flushed blocks yields a literal `null` body — not `[]`.
+  test("resolves an empty array when the body is a JSON null", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null));
+
+    await expect(exportEvents(TOKEN)).resolves.toEqual([]);
+  });
+
+  test("rejects with ApiError when the body is non-null but not an array", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ not: "an array" }));
+
+    await expect(exportEvents(TOKEN)).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("percent-encodes the blockID query value", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse([]));
+
+    await exportEvents(TOKEN, "block id&x=1");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/v1/export?blockID=block%20id%26x%3D1",
+      expect.anything(),
+    );
+  });
+
   test("throws AuthError on 401", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       textResponse("Unauthorized\n", 401),

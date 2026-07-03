@@ -30,11 +30,23 @@ export async function exportEvents(
   token: string,
   blockId?: string,
 ): Promise<ApiEvent[]> {
-  const url = blockId ? `/v1/export?blockID=${blockId}` : "/v1/export";
+  const url = blockId
+    ? `/v1/export?blockID=${encodeURIComponent(blockId)}`
+    : "/v1/export";
   const response = await request(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return (await response.json()) as ApiEvent[];
+
+  // Go encodes a nil slice as JSON `null`, so a tenant with no flushed
+  // blocks legitimately returns `null` rather than `[]`.
+  const data = (await response.json()) as ApiEvent[] | null;
+  if (data !== null && !Array.isArray(data)) {
+    throw new ApiError(
+      `GET ${url} returned a non-array body`,
+      response.status,
+    );
+  }
+  return data ?? [];
 }
 
 /**
