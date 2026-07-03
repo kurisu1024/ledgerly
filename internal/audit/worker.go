@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -9,12 +10,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// ErrWorkerStopped is returned by Flush when the worker is no longer running.
+var ErrWorkerStopped = errors.New("audit: worker stopped")
+
 type Worker interface {
 	Start(ctx context.Context) Worker
 	Stop()
-	// Flush persists every event accepted before the call, blocking until
-	// the write completes or ctx expires. The deterministic alternative to
-	// waiting out FlushInterval.
+	// Flush persists every event already resident in the queue when the
+	// worker services the request, blocking until the write completes or
+	// ctx expires. Events whose enqueue races the call may land in a later
+	// flush. Returns ErrWorkerStopped after Stop. A ctx expiry does not
+	// cancel a request already delivered to the worker — it still executes.
 	Flush(ctx context.Context) error
 }
 
@@ -29,6 +35,7 @@ func NewBatchInsertWorker(chainSize int, timeout time.Duration, chainWriter Even
 		logger:    log.With(zap.String("category", "worker-"+uuid.New().String())),
 		w:         chainWriter,
 		flushCh:   make(chan chan struct{}),
+		stopped:   make(chan struct{}),
 	}
 }
 
@@ -38,6 +45,7 @@ type batchInsertWorker struct {
 	timeout    time.Duration
 	cancel     context.CancelFunc
 	flushCh    chan chan struct{}
+	stopped    chan struct{}
 	insertFunc batchInsertFunc
 	logger     *zap.Logger
 	wg         sync.WaitGroup
@@ -62,6 +70,7 @@ func (w *batchInsertWorker) Start(ctx context.Context) Worker {
 
 func (w *batchInsertWorker) start(ctx context.Context) {
 	defer w.wg.Done()
+	defer close(w.stopped)
 
 	// chainMap is a map of `EventChain` keyed by TenantID.
 	chainMap := make(map[string]EventChain)
@@ -88,17 +97,28 @@ func (w *batchInsertWorker) start(ctx context.Context) {
 	}
 }
 
-// Flush asks the worker to persist every event accepted before the call.
+// Flush asks the worker to persist everything already in the queue.
 func (w *batchInsertWorker) Flush(ctx context.Context) error {
 	done := make(chan struct{})
 	select {
 	case w.flushCh <- done:
+	case <-w.stopped:
+		return ErrWorkerStopped
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	select {
 	case <-done:
 		return nil
+	case <-w.stopped:
+		// The flush branch runs to completion before the worker exits, so
+		// if the request was received, done is already closed here.
+		select {
+		case <-done:
+			return nil
+		default:
+			return ErrWorkerStopped
+		}
 	case <-ctx.Done():
 		return ctx.Err()
 	}
