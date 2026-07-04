@@ -497,6 +497,17 @@ func (h *Handler) Close(ctx context.Context) error {
 		}
 		s.cancel()
 
+		// The sender has stopped and the queue is closed: anything it never
+		// dequeued would otherwise be lost. Spill every remaining record to
+		// the disk buffer — before closing it below — so the next instance
+		// replays them with their original stamps. (A record the sender had
+		// dequeued when cancelled is already spilled by deliver itself.)
+		for body := range s.queue {
+			if aerr := s.buf.append(body); aerr != nil {
+				err = errors.Join(err, fmt.Errorf("ledgerly: spilling undelivered record on close: %w", aerr))
+			}
+		}
+
 		err = errors.Join(err, s.seq.close(), s.buf.close())
 	})
 	return err

@@ -2,9 +2,12 @@ package ledgerly
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -167,6 +170,79 @@ func TestDelivery_RestartReplay_PreservesOriginalStamps(t *testing.T) {
 
 	if !waitFor(t, time.Second, func() bool { return live.acceptedCount() > 0 }) {
 		t.Fatal("expected the restarted handler to replay the spilled event to the now-live server")
+	}
+}
+
+func TestDelivery_CloseTimeout_SpillsUndeliveredRecordsForReplay(t *testing.T) {
+	bufferDir := t.TempDir()
+
+	// A server that never responds until the client gives up: the sender
+	// blocks in-flight and the queue backs up behind it.
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer hang.Close()
+
+	h, err := NewHandler(fallbackRules(), newSpyHandler(true), WithBufferDir(bufferDir), WithEventsURL(hang.URL+"/v1/events"))
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	instanceID := h.shared.instanceID
+
+	logger := slog.New(h)
+	const n = 5
+	for i := 0; i < n; i++ {
+		logger.Info("delete", "event-type", "project.delete", "marker", strconv.Itoa(i))
+	}
+
+	// Close with an already-expired context: the drain is aborted, but no
+	// queued-but-undelivered record may be lost — every one must be spilled
+	// to the disk buffer for the next instance to replay.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := h.Close(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected Close on an expired context to surface ctx's error, got %v", err)
+	}
+
+	// Reopen the buffer dir as a fresh instance would and assert every
+	// enqueued record is present for replay with original stamps intact.
+	b, err := openBuffer(bufferDir)
+	if err != nil {
+		t.Fatalf("openBuffer after Close: %v", err)
+	}
+	records, err := b.replay()
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if len(records) != n {
+		t.Fatalf("expected all %d undelivered records spilled to the buffer on Close, got %d: %q", n, len(records), records)
+	}
+
+	markers := map[string]bool{}
+	seqs := map[string]bool{}
+	for _, rec := range records {
+		var ev struct {
+			Metadata map[string]string `json:"metadata"`
+		}
+		if err := json.Unmarshal(rec, &ev); err != nil {
+			t.Fatalf("decoding spilled record %q: %v", rec, err)
+		}
+		if ev.Metadata[MetaInstanceID] != instanceID {
+			t.Fatalf("expected the original %s stamp %q to survive spill, got %q", MetaInstanceID, instanceID, ev.Metadata[MetaInstanceID])
+		}
+		if ev.Metadata[MetaSeq] == "" {
+			t.Fatalf("expected an original %s stamp on the spilled record, metadata = %v", MetaSeq, ev.Metadata)
+		}
+		seqs[ev.Metadata[MetaSeq]] = true
+		markers[ev.Metadata["marker"]] = true
+	}
+	if len(seqs) != n {
+		t.Fatalf("expected %d distinct original %s stamps, got %d", n, MetaSeq, len(seqs))
+	}
+	for i := 0; i < n; i++ {
+		if !markers[strconv.Itoa(i)] {
+			t.Fatalf("expected spilled records to cover every enqueued marker, missing %d (got %v)", i, markers)
+		}
 	}
 }
 
