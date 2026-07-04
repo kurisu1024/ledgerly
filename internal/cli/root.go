@@ -7,6 +7,7 @@ package cli
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -45,18 +46,20 @@ type connection struct {
 
 // serverURL resolves --server-url, falling back to LEDGERLY_SERVER_URL.
 // Flag wins over environment.
-//
-// TODO(GREEN): RED-stage stub — always returns "".
 func (c *connection) serverURL() string {
-	return ""
+	if c.serverURLFlag != "" {
+		return c.serverURLFlag
+	}
+	return os.Getenv(EnvServerURL)
 }
 
 // token resolves --token, falling back to LEDGERLY_TOKEN. Flag wins over
 // environment.
-//
-// TODO(GREEN): RED-stage stub — always returns "".
 func (c *connection) token() string {
-	return ""
+	if c.tokenFlag != "" {
+		return c.tokenFlag
+	}
+	return os.Getenv(EnvToken)
 }
 
 // NewRootCmd builds the ledgerly-cli root command with all subcommands
