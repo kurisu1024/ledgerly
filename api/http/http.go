@@ -106,6 +106,7 @@ func New(ctx context.Context, stor storage.Storage, ruleStore storage.RuleStore,
 	// Register routes with JWT auth middleware
 	mux.HandleFunc("POST /v1/events", t.authMiddleware(t.CreateEvent))
 	mux.HandleFunc("GET /v1/export", t.authMiddleware(t.ExportEvents))
+	mux.HandleFunc("POST /v1/verify-chain", t.authMiddleware(t.VerifyChains))
 
 	mux.HandleFunc("GET /v1/rules", t.authMiddleware(t.ListRules))
 	mux.HandleFunc("POST /v1/rules", t.authMiddleware(t.CreateRule))
