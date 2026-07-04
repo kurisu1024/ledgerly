@@ -7,14 +7,14 @@ package ledgerly
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // ErrEmptyFallback is returned by NewHandler when fallback has no rules.
@@ -106,6 +106,17 @@ type handlerState struct {
 	poller *poller
 	queue  chan []byte
 
+	// cancel tears down the sender/poller lifecycle context; closeOnce
+	// makes Close idempotent.
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+
+	// mu guards closed and orders enqueues against Close closing the
+	// queue: enqueuers hold the read side, Close the write side, so a
+	// send on a closed channel is impossible.
+	mu     sync.RWMutex
+	closed bool
+
 	// captureAttempts counts Handle() calls that reached the capture
 	// pipeline (i.e. were NOT self-suppressed). Exported to tests only via
 	// the unexported captureAttempts() accessor, to pin the self-suppression
@@ -125,9 +136,10 @@ type Handler struct {
 // NewHandler constructs a Handler wrapping next. fallback must be
 // non-empty and next must be non-nil, or construction fails outright — see
 // ErrEmptyFallback / ErrNilNext. WithBufferDir must be supplied, or
-// ErrMissingBufferDir. Successful construction records a chained
-// sdk.started event (regime=fallback) once the delivery pipeline is
-// wired up.
+// ErrMissingBufferDir. When a rules endpoint is configured, construction
+// records a chained sdk.started event (regime=fallback), then performs one
+// synchronous rules fetch — a successful fetch swaps the active rule set
+// and records sdk.rules-activated before NewHandler returns.
 func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, error) {
 	if len(fallback) == 0 {
 		return nil, ErrEmptyFallback
@@ -145,10 +157,9 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 	}
 
 	shared := &handlerState{
-		cfg:        cfg,
-		instanceID: uuid.NewString(),
-		startedAt:  time.Now().UTC(),
-		queue:      make(chan []byte, cfg.queueSize),
+		cfg:       cfg,
+		startedAt: time.Now().UTC(),
+		queue:     make(chan []byte, cfg.queueSize),
 	}
 	active := append([]Rule{}, fallback...)
 	shared.activeRules.Store(&active)
@@ -160,6 +171,7 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 		return nil, fmt.Errorf("ledgerly: opening sequence counter: %w", err)
 	}
 	shared.seq = seq
+	shared.instanceID = seq.instanceID
 
 	buf, err := openBuffer(cfg.bufferDir)
 	if err != nil {
@@ -168,12 +180,31 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 	shared.buf = buf
 
 	shared.sender = newSender(shared.client, shared.buf, shared.queue, cfg.baseBackoff, cfg.maxBackoff)
+
+	h := &Handler{shared: shared, next: next}
+
 	shared.poller = newPoller(shared.client, cfg.refreshInterval, func(rl RuleList, ev regimeEvent) {
 		rules := append([]Rule{}, rl.Rules...)
 		shared.activeRules.Store(&rules)
+		if ev.Action != "" {
+			ev.FallbackDuration = time.Since(shared.startedAt)
+			h.emitRegime(context.Background(), ev)
+		}
 	})
 
-	return &Handler{shared: shared, next: next}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	shared.cancel = cancel
+	go shared.sender.run(ctx)
+
+	// A handler with no rules endpoint stays on its compiled-in fallback
+	// for life; regime transitions only exist (and are only recorded)
+	// when a poller can move the handler off fallback.
+	if cfg.rulesURL != "" {
+		h.emitRegime(context.Background(), regimeEvent{Action: ActionSDKStarted})
+	}
+	shared.poller.start(ctx)
+
+	return h, nil
 }
 
 // defaultSeqBlockSize is the sequence-counter reservation block size used
@@ -184,11 +215,20 @@ const defaultSeqBlockSize = 256
 // handle it, OR if the active rule set contains a level-at-least threshold
 // this level satisfies — a rule can ask for more evidence than the host
 // app's own configured log level admits.
-//
-// STUB: rule-driven widening is not implemented yet; this only defers to
-// next, so a rule wanting a level next doesn't emit is invisible.
 func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.next.Enabled(ctx, level)
+	if h.next.Enabled(ctx, level) {
+		return true
+	}
+	for _, r := range *h.shared.activeRules.Load() {
+		if r.LevelAtLeast == "" {
+			// No threshold: the rule wants every level of its event-type.
+			return true
+		}
+		if rank, ok := levelRank[r.LevelAtLeast]; ok && int(level) >= rank {
+			return true
+		}
+	}
+	return false
 }
 
 // Handle tees r to next unconditionally (ADR-0001: non-audit logs still
@@ -213,11 +253,121 @@ func (h *Handler) captureAttempts() int64 {
 	return atomic.LoadInt64(&h.shared.captureAttempts)
 }
 
-// capture stamps, matches, and (on a match) enqueues r for delivery.
-//
-// STUB: not implemented.
+// capture stamps, matches, and (on a match) enqueues r for delivery. The
+// only synchronous I/O on this path is the sequence allocation, which is
+// memory-only except for its rare, bounded block-refill fallback; the
+// enqueue itself never blocks (a full queue drops the record, its burned
+// sequence number leaving a chain-evidenced gap).
 func (h *Handler) capture(ctx context.Context, r slog.Record) error {
-	return ErrNotImplemented
+	_ = ctx
+
+	cr := flattenForHandler(r, h.groups, h.attrs)
+	if cr.EventType == "" {
+		return nil
+	}
+
+	matched, _ := Match(*h.shared.activeRules.Load(), cr.matchInput())
+	if !matched {
+		return nil
+	}
+
+	// Burn the sequence number synchronously, before the non-blocking
+	// enqueue: even a record dropped on a full queue is chain-evidenced.
+	seq, err := h.shared.seq.next()
+	if err != nil {
+		return err
+	}
+
+	meta := applyReservedStamps(mergeMeta(cr.Metadata, cr.Fields), h.shared.instanceID, seq)
+	body, err := json.Marshal(wireEvent{
+		OccurredAt: r.Time.UTC(),
+		Action:     cr.EventType,
+		Actor:      cr.Actor,
+		Resource:   cr.Resource,
+		Metadata:   meta,
+	})
+	if err != nil {
+		return fmt.Errorf("ledgerly: encoding captured event: %w", err)
+	}
+
+	h.enqueue(body)
+	return nil
+}
+
+// wireEvent is the POST /v1/events request body (api/events.Event wire
+// shape, kebab-case keys). The server assigns the event ID and derives the
+// tenant from the caller's token, so neither is set here.
+type wireEvent struct {
+	OccurredAt time.Time         `json:"occurred-at"`
+	Action     string            `json:"action"`
+	Actor      map[string]string `json:"actor"`
+	Resource   map[string]string `json:"resource"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// mergeMeta folds a record's loose Fields into its explicit metadata group
+// (explicit metadata wins) to form the event's user-defined metadata.
+func mergeMeta(metadata, fields map[string]string) map[string]string {
+	merged := make(map[string]string, len(metadata)+len(fields))
+	for k, v := range fields {
+		merged[k] = v
+	}
+	for k, v := range metadata {
+		merged[k] = v
+	}
+	return merged
+}
+
+// enqueue hands an encoded event body to the sender without ever blocking
+// the host app: a full queue drops the body, and a closed handler ignores
+// it.
+func (h *Handler) enqueue(body []byte) {
+	s := h.shared
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return
+	}
+	select {
+	case s.queue <- body:
+	default:
+		// Queue full: dropped. The already-burned sequence number leaves
+		// a chain-evidenced gap.
+	}
+}
+
+// emitRegime records a rules-regime transition (sdk.started,
+// sdk.rules-activated) both as a chained audit event and as an internal
+// diagnostic on next.
+func (h *Handler) emitRegime(ctx context.Context, ev regimeEvent) {
+	meta := map[string]string{}
+	switch ev.Action {
+	case ActionSDKStarted:
+		meta["regime"] = "fallback"
+	case ActionSDKRulesActivated:
+		meta["etag"] = ev.ETag
+		meta["fallback-duration"] = ev.FallbackDuration.String()
+	}
+
+	identity := map[string]string{"type": "ledgerly-sdk", "id": h.shared.instanceID}
+	if seq, err := h.shared.seq.next(); err == nil {
+		body, merr := json.Marshal(wireEvent{
+			OccurredAt: time.Now().UTC(),
+			Action:     ev.Action,
+			Actor:      identity,
+			Resource:   identity,
+			Metadata:   applyReservedStamps(meta, h.shared.instanceID, seq),
+		})
+		if merr == nil {
+			h.enqueue(body)
+		}
+	}
+
+	args := make([]any, 0, 2*len(meta))
+	for k, v := range meta {
+		args = append(args, k, v)
+	}
+	h.logInternal(ctx, slog.LevelInfo, ev.Action, args...)
 }
 
 // logInternal routes an SDK-internal diagnostic record directly to next,
@@ -263,9 +413,31 @@ func (h *Handler) WithGroup(name string) slog.Handler {
 
 // Close stops the poller, drains in-flight delivery, and checkpoints the
 // sequence counter and buffer cursor so a subsequent NewHandler on the
-// same buffer dir resumes cleanly.
-//
-// STUB: not implemented.
+// same buffer dir resumes cleanly. If ctx expires before the drain
+// finishes, delivery is aborted — anything undelivered stays spilled in
+// the disk buffer for the next instance to replay — and ctx's error is
+// returned.
 func (h *Handler) Close(ctx context.Context) error {
-	return ErrNotImplemented
+	s := h.shared
+	var err error
+	s.closeOnce.Do(func() {
+		s.poller.stop()
+
+		s.mu.Lock()
+		s.closed = true
+		close(s.queue)
+		s.mu.Unlock()
+
+		select {
+		case <-s.sender.done:
+		case <-ctx.Done():
+			s.cancel()
+			<-s.sender.done
+			err = ctx.Err()
+		}
+		s.cancel()
+
+		err = errors.Join(err, s.seq.close(), s.buf.close())
+	})
+	return err
 }
