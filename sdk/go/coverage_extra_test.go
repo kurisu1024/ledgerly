@@ -168,6 +168,76 @@ func TestDelivery_OptionsPlumbing_APIKeyClientAndBody(t *testing.T) {
 	}
 }
 
+// deliverAndDecodeMetadata drives one record through log → capture →
+// delivery against a live test server and returns the delivered event's
+// metadata, for pinning the reserved-stamp overwrite end to end.
+func deliverAndDecodeMetadata(t *testing.T, logIt func(*slog.Logger)) map[string]string {
+	t.Helper()
+
+	var mu sync.Mutex
+	var bodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(body)
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	h := newTestHandler(t, newSpyHandler(true), WithEventsURL(server.URL+"/v1/events"))
+	logIt(slog.New(h))
+
+	if !waitFor(t, time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(bodies) > 0 }) {
+		t.Fatal("expected the record to be captured and delivered")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := h.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var ev struct {
+		Metadata map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(bodies[0], &ev); err != nil {
+		t.Fatalf("decoding delivered event: %v", err)
+	}
+	return ev.Metadata
+}
+
+func TestReservedStamps_SpoofInsideMetadataGroup_Overwritten(t *testing.T) {
+	meta := deliverAndDecodeMetadata(t, func(logger *slog.Logger) {
+		logger.Warn("delete",
+			"event-type", "project.delete",
+			slog.Group("metadata", MetaSeq, "spoofed-nested"),
+		)
+	})
+
+	if meta[MetaSeq] == "spoofed-nested" || meta[MetaSeq] == "" {
+		t.Fatalf("expected a %s spoof nested in the metadata group to be overwritten by the real stamp, got %q", MetaSeq, meta[MetaSeq])
+	}
+	if meta[MetaInstanceID] == "" {
+		t.Fatalf("expected the real %s stamp to be present, metadata = %v", MetaInstanceID, meta)
+	}
+}
+
+func TestReservedStamps_SpoofViaBoundLoggerWith_Overwritten(t *testing.T) {
+	meta := deliverAndDecodeMetadata(t, func(logger *slog.Logger) {
+		logger.With(MetaSeq, "spoofed-bound").Warn("delete", "event-type", "project.delete")
+	})
+
+	if meta[MetaSeq] == "spoofed-bound" || meta[MetaSeq] == "" {
+		t.Fatalf("expected a %s spoof bound via logger.With to be overwritten by the real stamp, got %q", MetaSeq, meta[MetaSeq])
+	}
+	if meta[MetaInstanceID] == "" {
+		t.Fatalf("expected the real %s stamp to be present, metadata = %v", MetaInstanceID, meta)
+	}
+}
+
 func TestHandler_Enabled_FallsBackToNextForUnwantedLevels(t *testing.T) {
 	spy := newSpyHandler(false)
 	fallback := []Rule{{SchemaVersion: SchemaVersion, EventType: "project.delete", LevelAtLeast: "error"}}
