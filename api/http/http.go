@@ -58,8 +58,12 @@ func DefaultConfig() Config {
 func New(ctx context.Context, stor storage.Storage, ruleStore storage.RuleStore, cfg Config, logger *zap.Logger) *T {
 	queue := make(chan audit.Event, cfg.QueueSize)
 
-	// Create chain writer that writes to storage
-	chainWriter := storage.NewChainWriter(ctx, stor)
+	// Create chain writer that writes to storage. The writer's ctx must
+	// survive cancellation of the run ctx: service.Run cancels ctx to begin
+	// shutdown, and the worker's final drain-and-flush happens *after* that
+	// — a cancellation-respecting backend (Postgres) would otherwise refuse
+	// the flush and silently drop 202-acknowledged events.
+	chainWriter := storage.NewChainWriter(context.WithoutCancel(ctx), stor)
 
 	// Create and start worker
 	worker := audit.NewBatchInsertWorker(
