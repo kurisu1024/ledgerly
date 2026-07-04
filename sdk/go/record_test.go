@@ -1,9 +1,7 @@
 package ledgerly
 
 import (
-	"log/slog"
 	"testing"
-	"time"
 )
 
 func TestApplyReservedStamps_PresentAndNotOverridableByUserAttrs(t *testing.T) {
@@ -34,22 +32,5 @@ func TestApplyReservedStamps_PresentOnNilMetadata(t *testing.T) {
 	}
 	if got[MetaSeq] != "1" {
 		t.Fatalf("expected %s to be set even when starting from nil metadata, got %q", MetaSeq, got[MetaSeq])
-	}
-}
-
-func TestIsInternal_TrueWhenAttrPresent(t *testing.T) {
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Bool(internalAttr, true))
-
-	if !isInternal(r) {
-		t.Fatal("expected isInternal to report true for a record carrying the reserved internal attr")
-	}
-}
-
-func TestIsInternal_FalseWhenAttrAbsent(t *testing.T) {
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-
-	if isInternal(r) {
-		t.Fatal("expected isInternal to report false for an ordinary record")
 	}
 }

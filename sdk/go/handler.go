@@ -232,15 +232,16 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 // Handle tees r to next unconditionally (ADR-0001: non-audit logs still
-// reach the app's normal handler), then — unless r is self-suppressed —
-// attempts to capture it as an audit event. Capture failures never
+// reach the app's normal handler), then attempts to capture it as an audit
+// event. Every record entering Handle reaches the capture pipeline — there
+// is deliberately no attr-based suppression signal available to callers
+// (a public opt-out would be an unauthenticated audit-evasion switch);
+// SDK-internal diagnostics avoid capture only by never entering Handle at
+// all (logInternal writes directly to next). Capture failures never
 // propagate to the app; only next's error does.
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	err := h.next.Handle(ctx, r)
 
-	if isInternal(r) {
-		return err
-	}
 	atomic.AddInt64(&h.shared.captureAttempts, 1)
 	_ = h.capture(ctx, r)
 
@@ -371,11 +372,11 @@ func (h *Handler) emitRegime(ctx context.Context, ev regimeEvent) {
 }
 
 // logInternal routes an SDK-internal diagnostic record directly to next,
-// bypassing Handle() (and therefore capture()) entirely — guard #1 of the
-// two-guard self-suppression design (ADR-0001 amendments). It tags the
-// record with the reserved internalAttr so that even a miswired caller
-// that routes it back through Handle() hits guard #2 instead of
-// recursing.
+// bypassing Handle() (and therefore capture()) entirely — the sole
+// self-suppression mechanism (ADR-0001 amendments): the bypass is an
+// unexported code path, unavailable to public slog callers. It tags the
+// record with internalAttr purely as an informational marker for the
+// app's own log output; nothing keys off that attr.
 func (h *Handler) logInternal(ctx context.Context, level slog.Level, msg string, args ...any) {
 	r := slog.NewRecord(time.Now(), level, msg, 0)
 	r.Add(args...)

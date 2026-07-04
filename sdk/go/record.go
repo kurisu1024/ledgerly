@@ -15,10 +15,13 @@ const (
 	MetaSeq        = "ledgerly.sdk-seq"
 )
 
-// internalAttr marks a log record as SDK-internal diagnostics. Handle()
-// short-circuits any record carrying it (self-suppression guard #2); the
-// SDK's own internal logger also never routes through this Handler at all
-// (guard #1) — see handler.go.
+// internalAttr tags SDK-internal diagnostic records written onto next so
+// an app can identify (or filter) them in its own log output. It is
+// informational only — Handle() attaches NO semantics to it. A user
+// record carrying it is captured like any other, so the attr cannot be
+// used to evade audit capture; self-suppression relies solely on
+// logInternal writing diagnostics directly to next, bypassing Handle()
+// and capture() entirely (handler.go).
 const internalAttr = "ledgerly.internal"
 
 // eventTypeAttr is the reserved slog attribute a record must carry to be
@@ -146,19 +149,6 @@ func (cr capturedRecord) matchInput() MatchInput {
 		fields[resourceGroup+"."+k] = v
 	}
 	return MatchInput{Level: cr.Level, EventType: cr.EventType, Fields: fields}
-}
-
-// isInternal reports whether r carries the self-suppression attr.
-func isInternal(r slog.Record) bool {
-	internal := false
-	r.Attrs(func(a slog.Attr) bool {
-		if a.Key == internalAttr {
-			internal = true
-			return false
-		}
-		return true
-	})
-	return internal
 }
 
 // applyReservedStamps returns a copy of metadata with MetaInstanceID and

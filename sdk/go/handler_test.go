@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 )
 
 // spyHandler is a minimal slog.Handler that records every record it
@@ -125,15 +126,70 @@ func TestHandler_SelfSuppression_InternalLogNeverReachesCapture(t *testing.T) {
 	}
 }
 
-func TestHandler_SelfSuppression_HandleShortCircuitsInternalAttr(t *testing.T) {
+func TestHandler_UserInternalAttr_HasNoSuppressionSemantics(t *testing.T) {
+	// A host application setting ledgerly.internal=true on its own record
+	// must NOT exempt that record from capture: the attr would otherwise be
+	// an unauthenticated audit-evasion switch (no seq burned, no gap).
+	server := newCountingEventsServer(0)
+	defer server.Close()
+
 	spy := newSpyHandler(true)
-	h := newTestHandler(t, spy)
+	h := newTestHandler(t, spy, WithEventsURL(server.URL+"/v1/events"))
 
 	logger := slog.New(h)
-	logger.Info("miswired internal record", internalAttr, true)
+	logger.Info("evasion attempt", "event-type", "project.delete", internalAttr, true)
+
+	if attempts := h.captureAttempts(); attempts != 1 {
+		t.Fatalf("expected a user record carrying %q to reach the capture pipeline like any other, got %d capture attempts", internalAttr, attempts)
+	}
+	if !waitFor(t, time.Second, func() bool { return server.acceptedCount() >= 1 }) {
+		t.Fatalf("expected the record carrying %q to be captured and delivered normally, got none", internalAttr)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := h.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestHandler_InternalDiagnostics_NeverEnterCaptureEvenWithMatchingRules(t *testing.T) {
+	// Recursion guard: rules crafted to match the SDK's own regime events
+	// must not cause the internal diagnostics to be re-captured — internal
+	// diagnostics are written directly to next, never entering Handle. The
+	// only chained events are the two directly-enqueued regime events.
+	rules := newRulesServer([]byte(validRulesEnvelope), `"etag-1"`)
+	defer rules.Close()
+	events := newCountingEventsServer(0)
+	defer events.Close()
+
+	fallback := []Rule{
+		{SchemaVersion: SchemaVersion, EventType: ActionSDKStarted},
+		{SchemaVersion: SchemaVersion, EventType: ActionSDKRulesActivated},
+	}
+	spy := newSpyHandler(true)
+	h, err := NewHandler(fallback, spy,
+		WithBufferDir(t.TempDir()),
+		WithEventsURL(events.URL+"/v1/events"),
+		WithRulesURL(rules.URL+"/v1/rules"),
+	)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	// Both regime transitions (sdk.started, sdk.rules-activated) have fired
+	// by the time NewHandler returns; drain delivery via Close.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := h.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 
 	if attempts := h.captureAttempts(); attempts != 0 {
-		t.Fatalf("expected Handle to short-circuit a record carrying %q before capture, got %d capture attempts", internalAttr, attempts)
+		t.Fatalf("expected internal diagnostics to bypass Handle entirely (no recursion path), got %d capture attempts", attempts)
+	}
+	if got := events.acceptedCount(); got != 2 {
+		t.Fatalf("expected exactly the 2 directly-enqueued regime events (no recursive re-capture), got %d", got)
 	}
 }
 
