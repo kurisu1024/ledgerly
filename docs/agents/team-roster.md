@@ -56,14 +56,16 @@ and the executor's brief is "make these failing tests pass," not "implement X."
 | Stage | Agent |
 |---|---|
 | Write failing tests from the plan (RED) | `ecc:tdd-guide` |
-| Implement Go API / CLI (GREEN) | `ledgerly-go-executor` (project agent, `.claude/agents/`) |
-| Implement React frontend (GREEN) | `ledgerly-web-executor` (project agent, `.claude/agents/`) |
+| Implement Go API / CLI (GREEN) | `ledgerly-go-executor` (project agent) or `dev-workflows-fullstack:task-executor` |
+| Implement React frontend (GREEN) | `ledgerly-web-executor` (project agent) or `dev-workflows-fullstack:task-executor-frontend` / `frontend-developer` |
 
 The executors are repo-branded agents whose system prompts carry the audit-log
 invariants (tenant isolation, frozen hash format, 202 contract, fail-closed
-verification) so no dispatch can forget them. Generic `general-purpose` is a
-fallback only if the project agents are unavailable — and the dispatch log
-audit flags it when that happens.
+verification) so no dispatch can forget them. Any installed specialist executor from the accept-list above is compliant.
+Generic `general-purpose` is a fallback only when none are available — the
+dispatch-log audit flags it (with the required note explaining why). Build/fix
+executors must also load the relevant installed skills (golang-*, frontend/react
+patterns) and list them in their return; the audit checks skill usage too.
 
 `make test` is the canonical check (keep `-p=1`). Frontend gets its own test
 runner under `web/` once scaffolded; wire it into `make test`.
