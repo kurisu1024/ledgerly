@@ -1,0 +1,195 @@
+[
+  {
+    "name": "level-at-least-debug-matches-debug",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "debug"}
+    ],
+    "input": {"level": "debug", "event-type": "app.log", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "level-at-least-info-mismatches-debug",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "info"}
+    ],
+    "input": {"level": "debug", "event-type": "app.log", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "level-at-least-info-matches-info",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "info"}
+    ],
+    "input": {"level": "info", "event-type": "app.log", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "level-at-least-warn-mismatches-info",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "warn"}
+    ],
+    "input": {"level": "info", "event-type": "app.log", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "level-at-least-warn-matches-error",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "warn"}
+    ],
+    "input": {"level": "error", "event-type": "app.log", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "level-at-least-error-mismatches-warn",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "error"}
+    ],
+    "input": {"level": "warn", "event-type": "app.log", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "level-at-least-error-matches-error",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "app.log", "level-at-least": "error"}
+    ],
+    "input": {"level": "error", "event-type": "app.log", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "event-type-match",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "debug"}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "event-type-mismatch",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "debug"}
+    ],
+    "input": {"level": "info", "event-type": "project.create", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "field-equals-hit",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "actor.type", "op": "equals", "value": "admin"}
+      ]}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {"actor.type": "admin"}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "field-equals-miss",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "actor.type", "op": "equals", "value": "admin"}
+      ]}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {"actor.type": "user"}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "field-exists-hit-nonempty-value",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "resource.id", "op": "exists"}
+      ]}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {"resource.id": "proj-1"}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "field-exists-hit-empty-value",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "resource.id", "op": "exists"}
+      ]}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {"resource.id": ""}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "field-exists-miss-key-absent",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "resource.id", "op": "exists"}
+      ]}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "and-within-rule-all-conditions-hold",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "warn", "fields": [
+        {"key": "actor.type", "op": "equals", "value": "admin"},
+        {"key": "resource.id", "op": "exists"}
+      ]}
+    ],
+    "input": {"level": "error", "event-type": "project.delete", "fields": {"actor.type": "admin", "resource.id": "proj-1"}},
+    "matched": true,
+    "matched-rule-ids": ["r1"]
+  },
+  {
+    "name": "and-within-rule-one-condition-fails",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "warn", "fields": [
+        {"key": "actor.type", "op": "equals", "value": "admin"},
+        {"key": "resource.id", "op": "exists"}
+      ]}
+    ],
+    "input": {"level": "error", "event-type": "project.delete", "fields": {"actor.type": "user", "resource.id": "proj-1"}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "or-across-rules-only-second-matches",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.create", "level-at-least": "error"},
+      {"id": "r2", "schema-version": 1, "event-type": "project.delete", "level-at-least": "debug"}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {}},
+    "matched": true,
+    "matched-rule-ids": ["r2"]
+  },
+  {
+    "name": "or-across-rules-none-match",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.create", "level-at-least": "error"},
+      {"id": "r2", "schema-version": 1, "event-type": "project.update", "level-at-least": "error"}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {}},
+    "matched": false,
+    "matched-rule-ids": []
+  },
+  {
+    "name": "matched-rule-ids-lists-every-matching-rule",
+    "rules": [
+      {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "debug"},
+      {"id": "r2", "schema-version": 1, "event-type": "project.delete", "fields": [
+        {"key": "actor.type", "op": "equals", "value": "admin"}
+      ]},
+      {"id": "r3", "schema-version": 1, "event-type": "project.create", "level-at-least": "debug"}
+    ],
+    "input": {"level": "info", "event-type": "project.delete", "fields": {"actor.type": "admin"}},
+    "matched": true,
+    "matched-rule-ids": ["r1", "r2"]
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "schema-version-1-accepted",
+    "envelope": {
+      "schema-version": 1,
+      "rules": [
+        {"id": "r1", "schema-version": 1, "event-type": "project.delete", "level-at-least": "warn"}
+      ]
+    },
+    "accepted": true
+  },
+  {
+    "name": "schema-version-0-refused",
+    "envelope": {
+      "schema-version": 0,
+      "rules": []
+    },
+    "accepted": false
+  },
+  {
+    "name": "schema-version-2-refused",
+    "envelope": {
+      "schema-version": 2,
+      "rules": [
+        {"id": "r1", "schema-version": 2, "event-type": "project.delete"}
+      ]
+    },
+    "accepted": false
+  }
+]
