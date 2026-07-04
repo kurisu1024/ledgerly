@@ -90,24 +90,7 @@ func VerifyEvent(e Event) bool {
 // (e.g. storage recording the expected head hash), which this function
 // cannot provide on its own.
 func VerifyChain(chain EventChain) bool {
-	if len(chain.Events) == 0 {
-		return false
-	}
-	tenantID := chain.Events[0].TenantID
-	prev := genesisHash[:]
-	for _, e := range chain.Events {
-		if e.ChainID != chain.ID || e.TenantID != tenantID {
-			return false
-		}
-		if !bytes.Equal(e.PrevHash, prev) {
-			return false
-		}
-		if !VerifyEvent(e) {
-			return false
-		}
-		prev = e.EventHash
-	}
-	return true
+	return VerifyChainReport(chain).Status == StatusVerified
 }
 
 var genesisHash = sha256.Sum256([]byte("GENESIS"))

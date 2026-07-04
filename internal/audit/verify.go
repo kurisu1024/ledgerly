@@ -1,5 +1,7 @@
 package audit
 
+import "bytes"
+
 // VerifyStatus is the top-level outcome of verifying an EventChain.
 type VerifyStatus string
 
@@ -57,8 +59,52 @@ type VerifyResult struct {
 // callers (the CLI's `verify` command, the web viewer) can report what went
 // wrong and where.
 //
-// TODO(GREEN): this is a RED-stage stub. VerifyChain will become a 3-line
-// delegate to this function once it's implemented.
+// Limitation: truncating events from the tail leaves a valid prefix, which
+// still verifies. Detecting tail truncation requires an external anchor
+// (e.g. storage recording the expected head hash), which this function
+// cannot provide on its own.
 func VerifyChainReport(chain EventChain) VerifyResult {
-	return VerifyResult{}
+	length := len(chain.Events)
+	if length == 0 {
+		return VerifyResult{
+			Status:      StatusUnverifiable,
+			Reason:      ReasonEmpty,
+			FailedIndex: -1,
+			Length:      0,
+		}
+	}
+
+	tampered := func(reason VerifyReason, i int) VerifyResult {
+		return VerifyResult{
+			Status:      StatusTampered,
+			Reason:      reason,
+			FailedIndex: i,
+			Length:      length,
+		}
+	}
+
+	tenantID := chain.Events[0].TenantID
+	prev := genesisHash[:]
+	for i, e := range chain.Events {
+		if e.ChainID != chain.ID {
+			return tampered(ReasonForeignChain, i)
+		}
+		if e.TenantID != tenantID {
+			return tampered(ReasonTenantMixed, i)
+		}
+		if !bytes.Equal(e.PrevHash, prev) {
+			return tampered(ReasonLinkBroken, i)
+		}
+		if !VerifyEvent(e) {
+			return tampered(ReasonHashMismatch, i)
+		}
+		prev = e.EventHash
+	}
+
+	return VerifyResult{
+		Status:      StatusVerified,
+		Reason:      ReasonNone,
+		FailedIndex: -1,
+		Length:      length,
+	}
 }
