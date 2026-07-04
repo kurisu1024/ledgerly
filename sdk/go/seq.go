@@ -277,5 +277,19 @@ func writeFileSync(path string, v any) error {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", filepath.Base(path), err)
 	}
+
+	// fsync the directory so the rename itself survives a crash — without
+	// it the new file's directory entry may not be durable.
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("opening dir of %s: %w", filepath.Base(path), err)
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return fmt.Errorf("syncing dir of %s: %w", filepath.Base(path), err)
+	}
+	if err := dir.Close(); err != nil {
+		return fmt.Errorf("closing dir of %s: %w", filepath.Base(path), err)
+	}
 	return nil
 }
