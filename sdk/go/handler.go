@@ -169,7 +169,7 @@ type handlerState struct {
 	// pipeline (i.e. were NOT self-suppressed). Exported to tests only via
 	// the unexported captureAttempts() accessor, to pin the self-suppression
 	// guards independent of whatever capture ends up doing.
-	captureAttempts int64
+	captureAttempts atomic.Int64
 }
 
 // Handler is a slog.Handler implementing the ledgerly SDK pipeline. See
@@ -318,7 +318,7 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 		err = h.next.Handle(ctx, r)
 	}
 
-	atomic.AddInt64(&h.shared.captureAttempts, 1)
+	h.shared.captureAttempts.Add(1)
 	_ = h.capture(ctx, r)
 
 	return err
@@ -327,7 +327,7 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 // captureAttempts reports how many Handle() calls reached the capture
 // pipeline (i.e. were not self-suppressed). Test-only accessor.
 func (h *Handler) captureAttempts() int64 {
-	return atomic.LoadInt64(&h.shared.captureAttempts)
+	return h.shared.captureAttempts.Load()
 }
 
 // capture stamps, matches, and (on a match) enqueues r for delivery. The
