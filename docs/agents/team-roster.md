@@ -61,11 +61,12 @@ and the executor's brief is "make these failing tests pass," not "implement X."
 
 The executors are repo-branded agents whose system prompts carry the audit-log
 invariants (tenant isolation, frozen hash format, 202 contract, fail-closed
-verification) so no dispatch can forget them. Any installed specialist executor from the accept-list above is compliant.
-Generic `general-purpose` is a fallback only when none are available — the
-dispatch-log audit flags it (with the required note explaining why). Build/fix
-executors must also load the relevant installed skills (golang-*, frontend/react
-patterns) and list them in their return; the audit checks skill usage too.
+verification) so no dispatch can forget them. Any installed specialist executor from the accept-list above is compliant, and
+`general-purpose` is equally acceptable **provided the dispatch loads the
+relevant installed skills** (golang-*, frontend/react patterns) — skills are the
+hard requirement, agent branding is the convenience. Every build/fix executor
+must list the skills it invoked in its return; the dispatch-log audit flags
+skill gaps, not agent names.
 
 `make test` is the canonical check (keep `-p=1`). Frontend gets its own test
 runner under `web/` once scaffolded; wire it into `make test`.
