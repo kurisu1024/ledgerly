@@ -47,6 +47,7 @@ type config struct {
 	baseBackoff     time.Duration
 	maxBackoff      time.Duration
 	insecureHTTP    bool
+	asyncFirstFetch bool
 }
 
 func defaultConfig() config {
@@ -97,6 +98,13 @@ func WithBackoff(base, max time.Duration) Option {
 // localhost/loopback (the dev flow): audit events carry an API key and
 // sensitive payloads, so cleartext transport must be an explicit opt-in.
 func WithInsecureHTTP() Option { return func(c *config) { c.insecureHTTP = true } }
+
+// WithAsyncFirstFetch moves the first rules fetch off NewHandler's
+// critical path onto the polling goroutine, for latency-sensitive callers
+// that would rather start on the compiled-in fallback than wait up to the
+// first-fetch timeout. By default the first fetch is synchronous: the
+// server's rules are already active when NewHandler returns.
+func WithAsyncFirstFetch() Option { return func(c *config) { c.asyncFirstFetch = true } }
 
 // validateEndpointURL enforces the transport scheme for a configured
 // endpoint: https always passes; http passes only for loopback hosts or
@@ -177,8 +185,10 @@ type Handler struct {
 // ErrEmptyFallback / ErrNilNext. WithBufferDir must be supplied, or
 // ErrMissingBufferDir. When a rules endpoint is configured, construction
 // records a chained sdk.started event (regime=fallback), then performs one
-// synchronous rules fetch — a successful fetch swaps the active rule set
-// and records sdk.rules-activated before NewHandler returns.
+// synchronous rules fetch bounded by firstFetchTimeout — a successful
+// fetch swaps the active rule set and records sdk.rules-activated before
+// NewHandler returns. WithAsyncFirstFetch moves that first fetch onto the
+// polling goroutine instead, keeping construction off the network.
 func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, error) {
 	if len(fallback) == 0 {
 		return nil, ErrEmptyFallback
@@ -232,7 +242,7 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 
 	h := &Handler{shared: shared, next: next}
 
-	shared.poller = newPoller(shared.client, cfg.refreshInterval, func(rl RuleList, ev regimeEvent) {
+	shared.poller = newPoller(shared.client, cfg.refreshInterval, cfg.asyncFirstFetch, func(rl RuleList, ev regimeEvent) {
 		rules := append([]Rule{}, rl.Rules...)
 		shared.activeRules.Store(&rules)
 		if ev.Action != "" {

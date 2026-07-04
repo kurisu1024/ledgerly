@@ -1,6 +1,7 @@
 package ledgerly
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -36,6 +37,84 @@ func newRulesServer(body []byte, etag string) *rulesServer {
 
 const validRulesEnvelope = `{"schema-version":1,"rules":[{"id":"r1","schema-version":1,"event-type":"project.delete","level-at-least":"warn"}]}`
 const schemaV2RulesEnvelope = `{"schema-version":2,"rules":[]}`
+
+func TestPoller_FirstFetchTimeout_ShorterThanSteadyState(t *testing.T) {
+	// The synchronous first fetch runs inside NewHandler, so its budget
+	// must be tighter than the steady-state poll timeout.
+	if firstFetchTimeout >= fetchTimeout {
+		t.Fatalf("expected the constructor's first-fetch timeout (%s) to be shorter than the steady-state fetch timeout (%s)", firstFetchTimeout, fetchTimeout)
+	}
+}
+
+func TestPoller_SyncFirstFetch_BoundedByFirstFetchTimeout(t *testing.T) {
+	// A hung rules endpoint must not hang construction beyond the (short)
+	// first-fetch timeout.
+	release := make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer hung.Close()
+	defer close(release)
+
+	p := newPoller(newAPIClient("", hung.URL+"/v1/rules", "", nil), time.Hour, false, func(RuleList, regimeEvent) {})
+	p.firstFetchTimeout = 50 * time.Millisecond
+
+	start := time.Now()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.start(ctx)
+	elapsed := time.Since(start)
+	p.stop()
+
+	if elapsed >= time.Second {
+		t.Fatalf("expected start's synchronous first fetch to give up after its own short timeout, took %s", elapsed)
+	}
+}
+
+func TestNewHandler_SyncFirstFetch_RulesActiveOnReturn(t *testing.T) {
+	server := newRulesServer([]byte(validRulesEnvelope), `"etag-1"`)
+	defer server.Close()
+
+	h := newTestHandler(t, newSpyHandler(true), WithRulesURL(server.URL+"/v1/rules"))
+
+	// Sync is the default: the server's rules must already be active the
+	// moment NewHandler returns, no polling wait.
+	active := h.shared.activeRules.Load()
+	if active == nil || len(*active) == 0 || (*active)[0].ID != "r1" {
+		t.Fatal("expected the default synchronous first fetch to have the server's rules active when NewHandler returns")
+	}
+}
+
+func TestNewHandler_AsyncFirstFetch_ReturnsImmediatelyThenActivates(t *testing.T) {
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		w.Header().Set("ETag", `"etag-1"`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(validRulesEnvelope))
+	}))
+	defer slow.Close()
+
+	h := newTestHandler(t, newSpyHandler(true),
+		WithRulesURL(slow.URL+"/v1/rules"),
+		WithAsyncFirstFetch(),
+	)
+
+	// Construction must not have waited on the (still-blocked) fetch: the
+	// compiled-in fallback is still active.
+	active := h.shared.activeRules.Load()
+	if active == nil || len(*active) != 1 || (*active)[0].EventType != "project.delete" {
+		t.Fatal("expected WithAsyncFirstFetch to return with the fallback rules still active, not block on the first fetch")
+	}
+
+	close(release)
+	if !waitFor(t, time.Second, func() bool {
+		active := h.shared.activeRules.Load()
+		return active != nil && len(*active) > 0 && (*active)[0].ID == "r1"
+	}) {
+		t.Fatal("expected the async first fetch to eventually activate the server's rules")
+	}
+}
 
 func TestPoller_Startup_EmitsSDKStartedRegimeFallback(t *testing.T) {
 	server := newRulesServer([]byte(validRulesEnvelope), `"etag-1"`)
