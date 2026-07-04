@@ -1,8 +1,22 @@
 
 
 .PHONY: test
-test:
+test: test-go test-web
+
+.PHONY: test-go
+test-go:
 	go fmt ./... && go vet ./... && go test -v -p=1 -cover ./...
+
+# npm ci writes web/node_modules/.package-lock.json; use it as a stamp so
+# deps are reinstalled when the lockfile changes, not only when node_modules
+# is missing. `find -newer` keeps the check POSIX sh.
+.PHONY: test-web
+test-web:
+	@if [ ! -f web/node_modules/.package-lock.json ] || \
+		[ -n "$$(find web/package-lock.json -newer web/node_modules/.package-lock.json 2>/dev/null)" ]; then \
+		npm --prefix web ci; \
+	fi
+	npm --prefix web run test:run
 
 .PHONY: run
 run:

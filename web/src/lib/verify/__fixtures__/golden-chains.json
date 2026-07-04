@@ -1,0 +1,416 @@
+{
+  "genesis-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+  "cases": [
+    {
+      "name": "valid-nano",
+      "description": "3-event valid chain with nanosecond-precision timestamps, including trailing-zero trimming",
+      "chain": {
+        "id": "aaaaaaaa-0001-4000-8000-000000000001",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "aaaaaaaa-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-1"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "0zU0AUdJWESPYZZZ9A3msErGDmDIWarnshEu9NN8aQg="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000002",
+            "chain-id": "aaaaaaaa-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:01.1234Z",
+            "action": "project.update.2",
+            "actor": {
+              "id": "user-2",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-2",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-2"
+            },
+            "prev-hash": "0zU0AUdJWESPYZZZ9A3msErGDmDIWarnshEu9NN8aQg=",
+            "event-hash": "sY5I9w+3+e/pwh6cU+HzR7OIB5dZlc+ydHelvinqgqc="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000003",
+            "chain-id": "aaaaaaaa-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:02.000000007Z",
+            "action": "project.update.3",
+            "actor": {
+              "id": "user-3",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-3",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-3"
+            },
+            "prev-hash": "sY5I9w+3+e/pwh6cU+HzR7OIB5dZlc+ydHelvinqgqc=",
+            "event-hash": "BKp0MjOiZMU1PEjyk+whCk6GhDdBAQG2cPIyXa+mUj0="
+          }
+        ]
+      },
+      "expected": {
+        "verified": true
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:01.1234Z",
+        "2026-01-15T10:30:02.000000007Z"
+      ]
+    },
+    {
+      "name": "valid-offset",
+      "description": "valid chain where one event's occurred-at carries a +02:00 offset on the wire but is hashed in UTC",
+      "chain": {
+        "id": "aaaaaaaa-0002-4000-8000-000000000002",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "aaaaaaaa-0002-4000-8000-000000000002",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "Ng+EfAbk4ECdZgaAhlZR8gJj/HNLlqg2oivCrKsygbs="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000002",
+            "chain-id": "aaaaaaaa-0002-4000-8000-000000000002",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T12:30:01.5+02:00",
+            "action": "project.update.2",
+            "actor": {
+              "id": "user-2",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-2",
+              "type": "project"
+            },
+            "prev-hash": "Ng+EfAbk4ECdZgaAhlZR8gJj/HNLlqg2oivCrKsygbs=",
+            "event-hash": "zEfP1RgkIoH/aYYHCY5jdXeZE+T/P+wcpZuHr5hiJgA="
+          }
+        ]
+      },
+      "expected": {
+        "verified": true
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:01.5Z"
+      ]
+    },
+    {
+      "name": "valid-nil-metadata",
+      "description": "valid chain whose events have nil metadata (omitted from the wire JSON)",
+      "chain": {
+        "id": "aaaaaaaa-0003-4000-8000-000000000003",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "aaaaaaaa-0003-4000-8000-000000000003",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "YubFD5hEAshZM/qMYZIFGM3m8UrcjpsMIE64UqAfZOY="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000002",
+            "chain-id": "aaaaaaaa-0003-4000-8000-000000000003",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:01.1234Z",
+            "action": "project.update.2",
+            "actor": {
+              "id": "user-2",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-2",
+              "type": "project"
+            },
+            "prev-hash": "YubFD5hEAshZM/qMYZIFGM3m8UrcjpsMIE64UqAfZOY=",
+            "event-hash": "kZExfOy/77i+5jdX1VPwSUwuDfip++gHlF3ExTZ3W3k="
+          }
+        ]
+      },
+      "expected": {
+        "verified": true
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:01.1234Z"
+      ]
+    },
+    {
+      "name": "tampered-action",
+      "description": "event 1's action was mutated after hashing; its stored event-hash no longer matches",
+      "chain": {
+        "id": "bbbbbbbb-0001-4000-8000-000000000001",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "bbbbbbbb-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-1"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "etX/iVizRalp0nyJKUBz5g9Mt6AxM/vt2+dYzAimgMc="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000002",
+            "chain-id": "bbbbbbbb-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:01.1234Z",
+            "action": "project.delete.tampered",
+            "actor": {
+              "id": "user-2",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-2",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-2"
+            },
+            "prev-hash": "etX/iVizRalp0nyJKUBz5g9Mt6AxM/vt2+dYzAimgMc=",
+            "event-hash": "qVGqGEz6iXW9bLCCVlQRSJS1oL5JfAsC4pEPDWgJGp0="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000003",
+            "chain-id": "bbbbbbbb-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:02.000000007Z",
+            "action": "project.update.3",
+            "actor": {
+              "id": "user-3",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-3",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-3"
+            },
+            "prev-hash": "qVGqGEz6iXW9bLCCVlQRSJS1oL5JfAsC4pEPDWgJGp0=",
+            "event-hash": "6SZToTmZ98lpeLKCuHTd35JByj1Ivj98Ii3wLmcgsJA="
+          }
+        ]
+      },
+      "expected": {
+        "verified": false,
+        "failedIndex": 1,
+        "reason": "hash-mismatch"
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:01.1234Z",
+        "2026-01-15T10:30:02.000000007Z"
+      ]
+    },
+    {
+      "name": "broken-link",
+      "description": "event 1's prev-hash no longer links to event 0's event-hash",
+      "chain": {
+        "id": "bbbbbbbb-0002-4000-8000-000000000002",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "bbbbbbbb-0002-4000-8000-000000000002",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-1"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "bnMqqv7CnNm3seJAoChM9enaKfru4KsYSoXr6OAt79E="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000002",
+            "chain-id": "bbbbbbbb-0002-4000-8000-000000000002",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:01.1234Z",
+            "action": "project.update.2",
+            "actor": {
+              "id": "user-2",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-2",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-2"
+            },
+            "prev-hash": "kXMqqv7CnNm3seJAoChM9enaKfru4KsYSoXr6OAt79E=",
+            "event-hash": "P9wgSwIzXxBPYEZQ5dpv2UdWOFIy10/Buy4yAnurL5E="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000003",
+            "chain-id": "bbbbbbbb-0002-4000-8000-000000000002",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:02.000000007Z",
+            "action": "project.update.3",
+            "actor": {
+              "id": "user-3",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-3",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-3"
+            },
+            "prev-hash": "P9wgSwIzXxBPYEZQ5dpv2UdWOFIy10/Buy4yAnurL5E=",
+            "event-hash": "XWv48aoKbWAARgxLdyzDE/A5aUBZ6YcKqtpeR4LEM9U="
+          }
+        ]
+      },
+      "expected": {
+        "verified": false,
+        "failedIndex": 1,
+        "reason": "link-broken"
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:01.1234Z",
+        "2026-01-15T10:30:02.000000007Z"
+      ]
+    },
+    {
+      "name": "foreign-chain",
+      "description": "event 1 was spliced in from another chain; its chain-id does not match",
+      "chain": {
+        "id": "bbbbbbbb-0003-4000-8000-000000000003",
+        "events": [
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000001",
+            "chain-id": "bbbbbbbb-0003-4000-8000-000000000003",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.1",
+            "actor": {
+              "id": "user-1",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-1",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-1"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "5PmEk6o+GRf9UlYnRLWRXsv+X72dbIIg+/o1PqQNrPg="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000004",
+            "chain-id": "cccccccc-0001-4000-8000-000000000001",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:00.123456789Z",
+            "action": "project.update.4",
+            "actor": {
+              "id": "user-4",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-4",
+              "type": "project"
+            },
+            "prev-hash": "kBEx2DixeqwPeIW4HgPL3J9RV6ADQ9MKsiCDaF7RQWo=",
+            "event-hash": "eqfJdfq7zDGCkWDBqhCaqN1Fs8e6p2XBnutfUtkN7UM="
+          },
+          {
+            "id": "eeeeeeee-0000-4000-8000-000000000003",
+            "chain-id": "bbbbbbbb-0003-4000-8000-000000000003",
+            "tenant-id": "11111111-1111-4111-8111-111111111111",
+            "occurred-at": "2026-01-15T10:30:02.000000007Z",
+            "action": "project.update.3",
+            "actor": {
+              "id": "user-3",
+              "type": "user"
+            },
+            "resource": {
+              "id": "proj-3",
+              "type": "project"
+            },
+            "metadata": {
+              "request-id": "req-3"
+            },
+            "prev-hash": "GXO/Ysh7RS8l2DVD44HSS96ni07DX1j2MFwUXl04cbQ=",
+            "event-hash": "jJYjZsSPbd+VKfe8PJ1hZAXfV+e9P/P5bwX+PTarrAU="
+          }
+        ]
+      },
+      "expected": {
+        "verified": false,
+        "failedIndex": 1,
+        "reason": "foreign-chain"
+      },
+      "canonical-timestamps": [
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:00.123456789Z",
+        "2026-01-15T10:30:02.000000007Z"
+      ]
+    }
+  ]
+}

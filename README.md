@@ -71,6 +71,10 @@ Response:
 
 ---
 
+A read-only web inspection UI (paste a JWT, view and verify chains client-side) lives in [`web/`](web/README.md).
+
+---
+
 ## Who Ledgerly is For
 
 - B2B SaaS teams

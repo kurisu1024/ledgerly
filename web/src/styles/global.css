@@ -1,0 +1,319 @@
+@import "./tokens.css";
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+kbd {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-header {
+  padding: var(--space-8) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.app-header__subtitle {
+  margin: var(--space-2) 0 0;
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  max-width: 48ch;
+}
+
+.app-main {
+  padding: var(--space-6);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.app-main__tenant {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-4);
+}
+
+/* Token gate — the paste-a-JWT form */
+.token-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin: var(--space-12) auto;
+  padding: var(--space-6);
+  background: var(--color-paper-raised);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+}
+
+.token-gate__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-muted);
+}
+
+.token-gate__input {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-3);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.token-gate__input:focus-visible {
+  outline: 2px solid var(--color-verified);
+  outline-offset: 1px;
+  border-color: var(--color-verified);
+}
+
+.token-gate__error {
+  color: var(--color-tampered);
+  background: var(--color-tampered-bg);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.token-gate__submit {
+  align-self: flex-start;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.token-gate__submit:hover {
+  opacity: 0.85;
+}
+
+.token-gate__submit:focus-visible {
+  outline: 2px solid var(--color-verified);
+  outline-offset: 2px;
+}
+
+.token-gate__submit:active {
+  transform: scale(0.98);
+}
+
+/* Event viewer */
+.event-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.event-viewer__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.event-viewer__toolbar button {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.event-viewer__toolbar button:hover {
+  background: var(--color-rule);
+}
+
+.event-viewer__toolbar button:focus-visible {
+  outline: 2px solid var(--color-verified);
+  outline-offset: 2px;
+}
+
+.event-viewer__error {
+  color: var(--color-tampered);
+  background: var(--color-tampered-bg);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+
+.event-viewer__empty {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-8);
+  border: 1px dashed var(--color-rule-strong);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+/* Chain card + rail */
+.chain-card {
+  background: var(--color-paper-raised);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.chain-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.chain-card__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.chain-card__id {
+  font-size: var(--text-sm);
+  color: var(--color-ink-muted);
+}
+
+.chain-card__rail {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+/* The rail itself: a literal vertical line, colored by linkage validity,
+   with a visible rupture drawn at the failed row. */
+.chain-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-3) var(--space-4);
+  border-left: var(--rail-width) solid var(--color-rule-strong);
+  position: relative;
+}
+
+.chain-row--rupture {
+  border-left-color: var(--color-tampered);
+  background: var(--color-tampered-bg);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.chain-row--rupture::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--rail-width) * -1);
+  top: 0;
+  bottom: 0;
+  width: var(--rail-width);
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--color-tampered) 0,
+    var(--color-tampered) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.chain-row__action {
+  font-weight: 500;
+}
+
+.chain-row__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Verification badge */
+.verification-badge {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  max-width: 40ch;
+}
+
+.verification-badge--verified {
+  color: var(--color-verified);
+  background: var(--color-verified-bg);
+}
+
+.verification-badge--tampered {
+  color: var(--color-tampered);
+  background: var(--color-tampered-bg);
+}
+
+.verification-badge--unverifiable {
+  color: var(--color-unverifiable);
+  background: var(--color-unverifiable-bg);
+}
+
+/* Hash chip */
+.hash-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-paper);
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  word-break: break-all;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.hash-chip:hover {
+  background: var(--color-rule);
+  color: var(--color-ink);
+}
+
+.hash-chip:focus-visible {
+  outline: 2px solid var(--color-verified);
+  outline-offset: 1px;
+}
