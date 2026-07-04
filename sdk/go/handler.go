@@ -1,6 +1,7 @@
 // Package ledgerly is the Go SDK for the ledgerly audit-log API (issue
 // #26, ADR-0001): a slog.Handler that tees an app's existing logging to
-// its current handler unconditionally, evaluates a locally-cached trigger
+// its current handler (at that handler's own level), evaluates a
+// locally-cached trigger
 // rule set against every eligible record, and ships matches into
 // ledgerly's async ingest path.
 package ledgerly
@@ -290,16 +291,21 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-// Handle tees r to next unconditionally (ADR-0001: non-audit logs still
-// reach the app's normal handler), then attempts to capture it as an audit
-// event. Every record entering Handle reaches the capture pipeline — there
+// Handle tees r to next when next enables r's level (ADR-0001: non-audit
+// logs still reach the app's normal handler — but a rule wanting a level
+// the app configured away must not widen the app's own log output), then
+// attempts to capture it as an audit event unconditionally. Every record
+// entering Handle reaches the capture pipeline — there
 // is deliberately no attr-based suppression signal available to callers
 // (a public opt-out would be an unauthenticated audit-evasion switch);
 // SDK-internal diagnostics avoid capture only by never entering Handle at
 // all (logInternal writes directly to next). Capture failures never
 // propagate to the app; only next's error does.
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
-	err := h.next.Handle(ctx, r)
+	var err error
+	if h.next.Enabled(ctx, r.Level) {
+		err = h.next.Handle(ctx, r)
+	}
 
 	atomic.AddInt64(&h.shared.captureAttempts, 1)
 	_ = h.capture(ctx, r)
