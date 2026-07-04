@@ -68,6 +68,11 @@ func levelName(l slog.Level) string {
 // Actor, Resource, and Metadata come from the like-named top-level slog
 // groups; the reserved event-type attr becomes EventType; every other attr
 // becomes a Fields entry keyed by its (dotted, for nested groups) name.
+// Bound attrs arrive pre-qualified with the group stack they were bound
+// under (see Handler.WithAttrs); record attrs are qualified with the
+// handler's current group stack here, so both flatten identically — an
+// attr under a WithGroup("resource") handler routes into Resource exactly
+// like an inline slog.Group("resource", ...) attr (the slog contract).
 // Bound attrs flatten first, so a record attr under the same key wins.
 func flattenForHandler(r slog.Record, groups []string, bound []slog.Attr) capturedRecord {
 	cr := capturedRecord{
@@ -80,15 +85,21 @@ func flattenForHandler(r slog.Record, groups []string, bound []slog.Attr) captur
 	for _, a := range bound {
 		flattenAttr(&cr, "", a)
 	}
-	prefix := ""
-	for _, g := range groups {
-		prefix = joinKey(prefix, g)
-	}
 	r.Attrs(func(a slog.Attr) bool {
-		flattenAttr(&cr, prefix, a)
+		flattenAttr(&cr, "", qualifyAttr(groups, a))
 		return true
 	})
 	return cr
+}
+
+// qualifyAttr nests a under the accumulated WithGroup stack, outermost
+// group first, so it flattens exactly as the equivalent inline top-level
+// slog.Group attr would.
+func qualifyAttr(groups []string, a slog.Attr) slog.Attr {
+	for i := len(groups) - 1; i >= 0; i-- {
+		a = slog.Attr{Key: groups[i], Value: slog.GroupValue(a)}
+	}
+	return a
 }
 
 // flattenAttr routes a single (possibly group) attr into cr. prefix is the

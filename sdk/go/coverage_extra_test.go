@@ -238,6 +238,46 @@ func TestReservedStamps_SpoofViaBoundLoggerWith_Overwritten(t *testing.T) {
 	}
 }
 
+func TestReservedStamps_SpoofViaBoundMetadataGroupAttr_Overwritten(t *testing.T) {
+	meta := deliverAndDecodeMetadata(t, func(logger *slog.Logger) {
+		logger.With(slog.Group("metadata", MetaSeq, "spoofed-bound-group")).
+			Warn("delete", "event-type", "project.delete")
+	})
+
+	if meta[MetaSeq] == "spoofed-bound-group" || meta[MetaSeq] == "" {
+		t.Fatalf("expected a %s spoof bound inside a metadata group attr to be overwritten by the real stamp, got %q", MetaSeq, meta[MetaSeq])
+	}
+	if meta[MetaInstanceID] == "" {
+		t.Fatalf("expected the real %s stamp to be present, metadata = %v", MetaInstanceID, meta)
+	}
+}
+
+func TestReservedStamps_SpoofViaWithGroupMetadataBoundAttr_Overwritten(t *testing.T) {
+	// The WithGroup("metadata").With(MetaSeq, ...) shape: the bound attr is
+	// group-qualified into cr.Metadata, and the reserved-key overwrite must
+	// still win when the event is stamped.
+	base := newTestHandler(t, newSpyHandler(true))
+	derived, ok := base.WithGroup(metadataGroup).WithAttrs([]slog.Attr{slog.String(MetaSeq, "spoofed-withgroup")}).(*Handler)
+	if !ok {
+		t.Fatal("expected WithAttrs to return a *Handler")
+	}
+
+	r := slog.NewRecord(time.Now(), slog.LevelWarn, "delete", 0)
+	cr := flattenForHandler(r, derived.groups, derived.attrs)
+
+	if cr.Metadata[MetaSeq] != "spoofed-withgroup" {
+		t.Fatalf("expected the group-bound spoof routed into Metadata pre-stamping, got Metadata = %v, Fields = %v", cr.Metadata, cr.Fields)
+	}
+
+	stamped := applyReservedStamps(mergeMeta(cr.Metadata, cr.Fields), "real-instance", 7)
+	if stamped[MetaSeq] != "7" {
+		t.Fatalf("expected the group-bound %s spoof to be overwritten by the real stamp, got %q", MetaSeq, stamped[MetaSeq])
+	}
+	if stamped[MetaInstanceID] != "real-instance" {
+		t.Fatalf("expected the real %s stamp, got %q", MetaInstanceID, stamped[MetaInstanceID])
+	}
+}
+
 func TestHandler_Enabled_FallsBackToNextForUnwantedLevels(t *testing.T) {
 	spy := newSpyHandler(false)
 	fallback := []Rule{{SchemaVersion: SchemaVersion, EventType: "project.delete", LevelAtLeast: "error"}}

@@ -444,16 +444,24 @@ func (h *Handler) logInternal(ctx context.Context, level slog.Level, msg string,
 }
 
 // WithAttrs returns a new Handler sharing this one's state, whose next
-// carries the given attrs.
+// carries the given attrs. The attrs are stored pre-qualified with the
+// handler's current group stack (the standard slog handler pattern: attrs
+// bound after WithGroup belong under that group), so capture flattens them
+// identically to inline group attrs — WithGroup("resource").With("id", x)
+// routes into the event's Resource field, not top-level Fields.
 func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(attrs) == 0 {
 		return h
+	}
+	qualified := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		qualified[i] = qualifyAttr(h.groups, a)
 	}
 	return &Handler{
 		shared: h.shared,
 		next:   h.next.WithAttrs(attrs),
 		groups: h.groups,
-		attrs:  append(append([]slog.Attr{}, h.attrs...), attrs...),
+		attrs:  append(append([]slog.Attr{}, h.attrs...), qualified...),
 	}
 }
 
