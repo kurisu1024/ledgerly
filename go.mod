@@ -25,3 +25,12 @@ require (
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 )
+
+// sdk/go is a separate Go module (github.com/kurisu1024/ledgerly/sdk/go,
+// issue #26) with zero dependency on this one, joined for local dev via
+// go.work. make test-go runs GOWORK=off, so the root module needs its own
+// require + replace to resolve the import service/ uses for dogfood
+// wiring (issue #27) — see sdk/go/README.md.
+require github.com/kurisu1024/ledgerly/sdk/go v0.0.0
+
+replace github.com/kurisu1024/ledgerly/sdk/go => ./sdk/go
