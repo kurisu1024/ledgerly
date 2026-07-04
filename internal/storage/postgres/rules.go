@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,10 +73,12 @@ func (r *Rules) MutateRules(ctx context.Context, tenantID uuid.UUID, fn storage.
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
 
 	// Per-tenant advisory lock, released automatically at commit/rollback.
-	// hashtextextended maps the tenant UUID onto the bigint advisory-lock
-	// keyspace.
+	// The two int4 keys are derived from the tenant UUID's two 64-bit
+	// halves, so all 128 bits of the tenant ID feed the lock key directly
+	// instead of going through hashtextextended over the text form.
+	key1, key2 := advisoryLockKeys(tenantID)
 	if _, err := tx.Exec(ctx,
-		`SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, tenantID,
+		`SELECT pg_advisory_xact_lock($1, $2)`, key1, key2,
 	); err != nil {
 		return nil, fmt.Errorf("acquiring advisory lock for tenant %s: %w", tenantID, err)
 	}
@@ -112,6 +115,19 @@ func (r *Rules) MutateRules(ctx context.Context, tenantID uuid.UUID, fn storage.
 		return nil, fmt.Errorf("committing MutateRules transaction: %w", err)
 	}
 	return updated, nil
+}
+
+// advisoryLockKeys derives the two int4 keys for the two-arg
+// pg_advisory_xact_lock(int, int) overload from the tenant UUID: the UUID's
+// high and low 64-bit halves are each folded to 32 bits (upper word XOR
+// lower word), so every bit of the tenant ID contributes to the lock key.
+// Postgres's two-arg advisory locks use a separate keyspace from the
+// single-bigint overload, keeping these locks from colliding with any other
+// bigint-keyed advisory locks in the database.
+func advisoryLockKeys(tenantID uuid.UUID) (int32, int32) {
+	hi := binary.BigEndian.Uint64(tenantID[0:8])
+	lo := binary.BigEndian.Uint64(tenantID[8:16])
+	return int32(uint32(hi>>32) ^ uint32(hi)), int32(uint32(lo>>32) ^ uint32(lo))
 }
 
 // querier is the subset of pgx query methods shared by *pgxpool.Pool and
