@@ -9,8 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// pingTimeout bounds NewPool's startup ping so an unreachable host fails
+// fast even when the caller passes an unbounded ctx.
+const pingTimeout = 10 * time.Second
+
 // NewPool opens a pgx connection pool against dsn. The caller owns the pool
-// and must Close it; ctx bounds the initial connection attempt.
+// and must Close it; ctx bounds the initial connection attempt, and the
+// startup ping is additionally capped at pingTimeout.
 func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -28,8 +33,12 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	}
 
 	// pgxpool connects lazily; ping so an unreachable database or bad
-	// credentials fail fast at startup instead of on the first query.
-	if err := pool.Ping(ctx); err != nil {
+	// credentials fail fast at startup instead of on the first query. The
+	// ping carries its own timeout so "fail fast" holds regardless of the
+	// caller's ctx.
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("pinging postgres: %w", err)
 	}
