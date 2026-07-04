@@ -235,7 +235,9 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 
 	buf, err := openBuffer(cfg.bufferDir)
 	if err != nil {
-		return nil, fmt.Errorf("ledgerly: opening disk buffer: %w", err)
+		// Release the sequencer's open reservation handle and restore its
+		// clean checkpoint — nothing was issued yet.
+		return nil, errors.Join(fmt.Errorf("ledgerly: opening disk buffer: %w", err), seq.close())
 	}
 	shared.buf = buf
 
