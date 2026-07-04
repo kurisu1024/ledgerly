@@ -18,11 +18,9 @@ import (
 
 // eventBodyCapBytes mirrors the transport limit issue #33 asks for on
 // POST /v1/events: 1 MiB, an order of magnitude above any legitimate event
-// payload. There is no production constant to reference yet — RED phase for
-// #33 — so this is a test-local stand-in documenting the expected cap. Once
-// implemented, the production side should live in api/http (e.g. a
-// maxEventBodyBytes const beside CreateEvent, mirroring maxRuleBodyBytes in
-// rules.go) and this comment should be updated to reference it directly.
+// payload. The production constant is maxEventBodyBytes beside CreateEvent
+// in handlers.go (unexported, so mirrored here from the external test
+// package), which mirrors maxRuleBodyBytes in rules.go.
 const eventBodyCapBytes = 1 << 20 // 1 MiB, per issue #33
 
 // bloatedEvent returns a structurally valid event whose Metadata field pads
