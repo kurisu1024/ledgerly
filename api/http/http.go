@@ -15,6 +15,7 @@ type T struct {
 	mux          *http.ServeMux
 	handler      http.Handler // Wrapped handler with middleware
 	storage      storage.Storage
+	ruleStore    storage.RuleStore
 	queue        chan audit.Event
 	worker       audit.Worker
 	logger       *zap.Logger
@@ -54,7 +55,7 @@ func DefaultConfig() Config {
 
 // New creates a new HTTP server with the provided storage backend and configuration.
 // It starts a worker to process events asynchronously.
-func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logger) *T {
+func New(ctx context.Context, stor storage.Storage, ruleStore storage.RuleStore, cfg Config, logger *zap.Logger) *T {
 	queue := make(chan audit.Event, cfg.QueueSize)
 
 	// Create chain writer that writes to storage
@@ -74,6 +75,7 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	t := &T{
 		mux:                mux,
 		storage:            stor,
+		ruleStore:          ruleStore,
 		queue:              queue,
 		worker:             worker,
 		logger:             logger,
@@ -92,6 +94,12 @@ func New(ctx context.Context, stor storage.Storage, cfg Config, logger *zap.Logg
 	// Register routes with JWT auth middleware
 	mux.HandleFunc("POST /v1/events", t.authMiddleware(t.CreateEvent))
 	mux.HandleFunc("GET /v1/export", t.authMiddleware(t.ExportEvents))
+
+	mux.HandleFunc("GET /v1/rules", t.authMiddleware(t.ListRules))
+	mux.HandleFunc("POST /v1/rules", t.authMiddleware(t.CreateRule))
+	mux.HandleFunc("GET /v1/rules/{id}", t.authMiddleware(t.GetRule))
+	mux.HandleFunc("PUT /v1/rules/{id}", t.authMiddleware(t.UpdateRule))
+	mux.HandleFunc("DELETE /v1/rules/{id}", t.authMiddleware(t.DeleteRule))
 
 	// Wrap mux with logging middleware
 	t.handler = loggingMiddleware(logger)(mux)

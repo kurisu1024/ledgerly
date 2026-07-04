@@ -58,7 +58,7 @@ func (s *T) Run(ctx context.Context) error {
 	// to keep `make load-events` working without a signing key.
 	cfg := httpapi.DefaultConfig()
 	cfg.AllowUnverifiedJWT = true
-	handler := httpapi.New(ctx, memory.New(), cfg, log)
+	handler := httpapi.New(ctx, memory.New(), memory.NewRules(), cfg, log)
 	defer handler.Close()
 
 	// Create HTTP server

@@ -67,7 +67,7 @@ func TestJWTSignatureVerification(t *testing.T) {
 	t.Log("\tGiven an HTTP server configured with an RSA public key")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	server := apihttp.New(ctx, memory.New(), testConfig(), zap.NewNop())
+	server := apihttp.New(ctx, memory.New(), memory.NewRules(), testConfig(), zap.NewNop())
 	defer server.Close()
 
 	tenantID := uuid.New()
@@ -178,7 +178,7 @@ func TestJWTNoKeyConfigured(t *testing.T) {
 	{
 		t.Log("\tWhen AllowUnverifiedJWT is false (production default)")
 		cfg := apihttp.DefaultConfig()
-		server := apihttp.New(ctx, memory.New(), cfg, zap.NewNop())
+		server := apihttp.New(ctx, memory.New(), memory.NewRules(), cfg, zap.NewNop())
 		defer server.Close()
 
 		if got := postEvent(t, server, unsigned); got != http.StatusUnauthorized {
@@ -191,7 +191,7 @@ func TestJWTNoKeyConfigured(t *testing.T) {
 		t.Log("\tWhen AllowUnverifiedJWT is true (dev mode)")
 		cfg := apihttp.DefaultConfig()
 		cfg.AllowUnverifiedJWT = true
-		server := apihttp.New(ctx, memory.New(), cfg, zap.NewNop())
+		server := apihttp.New(ctx, memory.New(), memory.NewRules(), cfg, zap.NewNop())
 		defer server.Close()
 
 		if got := postEvent(t, server, unsigned); got != http.StatusAccepted {
@@ -204,7 +204,7 @@ func TestJWTNoKeyConfigured(t *testing.T) {
 		t.Log("\tWhen a key is set, the dev flag must not bypass verification")
 		cfg := testConfig()
 		cfg.AllowUnverifiedJWT = true
-		server := apihttp.New(ctx, memory.New(), cfg, zap.NewNop())
+		server := apihttp.New(ctx, memory.New(), memory.NewRules(), cfg, zap.NewNop())
 		defer server.Close()
 
 		if got := postEvent(t, server, unsigned); got != http.StatusUnauthorized {

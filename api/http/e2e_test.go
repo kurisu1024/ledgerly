@@ -15,6 +15,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	apihttp "github.com/kurisu1024/ledgerly/api/http"
+	apirules "github.com/kurisu1024/ledgerly/api/rules"
+	"github.com/kurisu1024/ledgerly/internal/audit"
+	domainrules "github.com/kurisu1024/ledgerly/internal/rules"
+	"github.com/kurisu1024/ledgerly/internal/storage"
 	"github.com/kurisu1024/ledgerly/internal/storage/memory"
 	"go.uber.org/zap"
 )
@@ -89,7 +93,7 @@ func TestEndToEnd_CreateAndExportEvents(t *testing.T) {
 		JWTPublicKey:  &testKey.PublicKey,
 	}
 
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	tenantID := uuid.New()
@@ -190,7 +194,7 @@ func TestEndToEnd_MultipleTenants(t *testing.T) {
 		JWTPublicKey:  &testKey.PublicKey,
 	}
 
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	tenant1 := uuid.New()
@@ -275,7 +279,7 @@ func TestEndToEnd_GracefulShutdown(t *testing.T) {
 		JWTPublicKey:  &testKey.PublicKey,
 	}
 
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 
 	tenantID := uuid.New()
 
@@ -309,7 +313,7 @@ func TestEndToEnd_GracefulShutdown(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		// Create new server just to use the export handler
-		server2 := apihttp.New(ctx, store, cfg, logger)
+		server2 := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 		defer server2.Close()
 		server2.ServeHTTP(w, req)
 
@@ -321,4 +325,102 @@ func TestEndToEnd_GracefulShutdown(t *testing.T) {
 		}
 		t.Logf("\t%s\tAll events flushed on graceful shutdown\n", pass)
 	}
+}
+
+// TestEndToEnd_RuleLifecycleChained exercises the full ADR-0002 contract:
+// create, update, and delete a rule, flush the worker, export the tenant's
+// events, and verify each mutation landed as its own chained audit event
+// with the chain still verifying end to end.
+func TestEndToEnd_RuleLifecycleChained(t *testing.T) {
+	t.Log("\tGiven an HTTP server with rule and event storage")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := testConfig()
+	cfg.ChainSize = 100
+	cfg.FlushInterval = time.Hour
+
+	server, store, _ := newRuleServer(ctx, cfg)
+	defer server.Close()
+
+	tenantID := uuid.New()
+
+	var ruleID string
+	{
+		t.Log("\tWhen creating a rule")
+		w := doJSON(t, server, http.MethodPost, "/v1/rules", tenantID, newTestRule("project.delete"))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("\t%s\tExpected 201 creating rule, got %d: %s", fail, w.Code, w.Body.String())
+		}
+		var created apirules.Rule
+		if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+			t.Fatalf("\t%s\tDecoding created rule: %v", fail, err)
+		}
+		ruleID = created.ID
+		t.Logf("\t%s\tRule created with id %s", pass, ruleID)
+	}
+
+	{
+		t.Log("\tWhen updating the rule")
+		updated := apirules.Rule{
+			ID:            ruleID,
+			SchemaVersion: domainrules.SchemaVersion,
+			EventType:     "project.delete",
+			LevelAtLeast:  "warn",
+		}
+		w := doJSON(t, server, http.MethodPut, "/v1/rules/"+ruleID, tenantID, updated)
+		if w.Code != http.StatusOK {
+			t.Fatalf("\t%s\tExpected 200 updating rule, got %d: %s", fail, w.Code, w.Body.String())
+		}
+	}
+
+	{
+		t.Log("\tWhen deleting the rule")
+		w := doJSON(t, server, http.MethodDelete, "/v1/rules/"+ruleID, tenantID, nil)
+		if w.Code != http.StatusOK && w.Code != http.StatusNoContent {
+			t.Fatalf("\t%s\tExpected 200/204 deleting rule, got %d: %s", fail, w.Code, w.Body.String())
+		}
+	}
+
+	if err := server.Flush(ctx); err != nil {
+		t.Fatalf("\t%s\tFlush: %v", fail, err)
+	}
+
+	t.Log("\tThen the export should contain three chained rule-mutation events")
+	exportW := doJSON(t, server, http.MethodGet, "/v1/export", tenantID, nil)
+	if exportW.Code != http.StatusOK {
+		t.Fatalf("\t%s\tExpected 200 exporting events, got %d: %s", fail, exportW.Code, exportW.Body.String())
+	}
+	var exported []Event
+	if err := json.NewDecoder(exportW.Body).Decode(&exported); err != nil {
+		t.Fatalf("\t%s\tDecoding exported events: %v", fail, err)
+	}
+
+	wantActions := []string{
+		domainrules.ActionRuleCreated,
+		domainrules.ActionRuleUpdated,
+		domainrules.ActionRuleDeleted,
+	}
+	for _, action := range wantActions {
+		found := false
+		for _, e := range exported {
+			if e.Action == action && e.Resource["id"] == ruleID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("\t%s\tExpected a %s event for rule %s in export, got: %+v", fail, action, ruleID, exported)
+		}
+	}
+
+	blocks, err := store.FetchBlocks(ctx, tenantID, storage.FetchOptions{})
+	if err != nil {
+		t.Fatalf("\t%s\tFetchBlocks: %v", fail, err)
+	}
+	for _, block := range blocks {
+		if !audit.VerifyChain(block.Chain) {
+			t.Fatalf("\t%s\tExpected chain %s to verify after rule lifecycle", fail, block.Chain.ID)
+		}
+	}
+	t.Logf("\t%s\tRule lifecycle fully chained and verifiable\n", pass)
 }

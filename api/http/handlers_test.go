@@ -24,7 +24,7 @@ func TestCreateEvent(t *testing.T) {
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
 	cfg := testConfig()
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	tenantID := uuid.New()
@@ -94,7 +94,7 @@ func TestExportEvents(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	cfg := testConfig()
 	cfg.FlushInterval = 100 * time.Millisecond
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	tenantID := uuid.New()
@@ -169,7 +169,7 @@ func TestMissingAuthHeader(t *testing.T) {
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
 	cfg := testConfig()
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	{
@@ -197,7 +197,7 @@ func TestInvalidTenantID(t *testing.T) {
 	store := memory.New()
 	logger, _ := zap.NewDevelopment()
 	cfg := testConfig()
-	server := apihttp.New(ctx, store, cfg, logger)
+	server := apihttp.New(ctx, store, memory.NewRules(), cfg, logger)
 	defer server.Close()
 
 	{
