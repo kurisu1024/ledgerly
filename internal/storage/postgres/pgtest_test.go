@@ -12,6 +12,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// ============================================================================
+// WARNING: NEVER point LEDGERLY_TEST_DSN at a database you care about.
+// This harness CREATES and DROPS schemas (DROP SCHEMA ... CASCADE) in
+// whatever database the DSN targets. Use a disposable container, e.g.:
+//
+//	docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=pw postgres:17-alpine
+//
+// ============================================================================
+
 // setupTestSchema creates a randomly named, schema.sql-applied Postgres
 // schema for a test, skipping unless LEDGERLY_TEST_DSN is set. It returns
 // the DSN and the schema name; callers open pools against it with
