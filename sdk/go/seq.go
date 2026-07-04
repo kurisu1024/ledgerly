@@ -15,8 +15,9 @@ import (
 // per-SDK-instance ID plus the clean-close checkpoint and is only written
 // on open and close (atomically, via rename + fsync). The reservation
 // high-water mark changes constantly, so it lives in its own fixed-width
-// file rewritten in place through a persistent handle — a single-sector
-// overwrite, never a new file.
+// slot file rewritten in place through a persistent handle — checksummed
+// alternating slots (counter.go), so a torn write can never surface as a
+// silently rewound counter.
 const (
 	seqStateFile   = "instance.json"
 	seqReserveFile = "seq.reserve"
@@ -32,11 +33,6 @@ type seqState struct {
 	Checkpoint uint64 `json:"checkpoint"`
 	Clean      bool   `json:"clean"`
 }
-
-// counterWidth is the fixed byte width of the zero-padded decimal counters
-// persisted in seqReserveFile (and the buffer cursor) — wide enough for
-// any uint64.
-const counterWidth = 20
 
 // sequencer assigns a monotonic, crash-safe sequence number per SDK
 // instance, persisted alongside the disk buffer (ADR-0001 amendments: gap
@@ -241,37 +237,6 @@ func (s *sequencer) close() error {
 	}
 	if err := s.reserveF.Close(); err != nil {
 		return fmt.Errorf("ledgerly: closing sequence reservation file: %w", err)
-	}
-	return nil
-}
-
-// readCounter reads a fixed-width decimal counter from f. An empty (fresh)
-// file reads as zero.
-func readCounter(f *os.File) (uint64, error) {
-	buf := make([]byte, counterWidth)
-	n, err := f.ReadAt(buf, 0)
-	if n == 0 {
-		return 0, nil
-	}
-	if n < counterWidth && err != nil {
-		return 0, fmt.Errorf("short counter file (%d bytes)", n)
-	}
-	var v uint64
-	if _, err := fmt.Sscanf(string(buf), "%d", &v); err != nil {
-		return 0, fmt.Errorf("parsing counter %q: %w", buf, err)
-	}
-	return v, nil
-}
-
-// writeCounter overwrites f in place with v as a fixed-width decimal and
-// fsyncs — a single-sector write, so no new file ever appears and a torn
-// write is not a practical concern.
-func writeCounter(f *os.File, v uint64) error {
-	if _, err := f.WriteAt(fmt.Appendf(nil, "%0*d", counterWidth, v), 0); err != nil {
-		return fmt.Errorf("writing counter: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("syncing counter: %w", err)
 	}
 	return nil
 }
