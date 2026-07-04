@@ -245,6 +245,15 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 
 	h := &Handler{shared: shared, next: next}
 
+	// Surface async reservation failures as internal diagnostics: the sync
+	// fallback in next() will surface the error to the caller eventually,
+	// but operators should hear about a failing disk before that. Set
+	// before any next() call can spawn a refill, so refillAsync reads it
+	// without synchronization.
+	seq.diag = func(derr error) {
+		h.logInternal(context.Background(), slog.LevelWarn, "ledgerly: async sequence reservation failed", "error", derr.Error())
+	}
+
 	shared.poller = newPoller(shared.client, cfg.refreshInterval, cfg.asyncFirstFetch, func(rl RuleList, ev regimeEvent) {
 		rules := append([]Rule{}, rl.Rules...)
 		shared.activeRules.Store(&rules)

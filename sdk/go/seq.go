@@ -61,6 +61,11 @@ type sequencer struct {
 	persistedHW uint64
 
 	refills sync.WaitGroup
+
+	// diag, when set (once, before any next() call — read without
+	// synchronization), receives async refill errors as an operator
+	// diagnostic; the sync fallback in next() still surfaces them.
+	diag func(error)
 }
 
 // openSequencer opens (or creates, for a fresh dir) a sequence counter
@@ -188,6 +193,9 @@ func (s *sequencer) next() (uint64, error) {
 func (s *sequencer) refillAsync(target uint64) {
 	defer s.refills.Done()
 	err := s.reserve(target)
+	if err != nil && s.diag != nil {
+		s.diag(err)
+	}
 
 	s.mu.Lock()
 	if err == nil && target > s.highWater {
