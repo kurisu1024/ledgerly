@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -191,5 +192,23 @@ func TestPoller_SchemaVersion2_Refused_KeepsCurrentRules(t *testing.T) {
 	active := h.shared.activeRules.Load()
 	if active == nil || len(*active) != 1 || (*active)[0].EventType != "project.delete" {
 		t.Fatal("expected an envelope with an unrecognized schema-version to be refused, keeping the compiled-in fallback rules active")
+	}
+}
+
+func TestFetchRules_RefusesOversizedEnvelope(t *testing.T) {
+	// A rules envelope beyond the decode cap must be refused, keeping the
+	// caller's current rule set active — defense in depth against a
+	// misbehaving (or compromised) rules endpoint.
+	padding := strings.Repeat("x", 2<<20) // 2 MiB, over the 1 MiB cap
+	huge := `{"schema-version":1,"rules":[{"id":"` + padding + `","schema-version":1,"event-type":"project.delete"}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(huge))
+	}))
+	defer server.Close()
+
+	c := newAPIClient("", server.URL+"/v1/rules", "", nil)
+	if _, _, _, err := c.fetchRules(context.Background(), ""); err == nil {
+		t.Fatal("expected fetchRules to refuse an oversized rules envelope, got nil error")
 	}
 }
