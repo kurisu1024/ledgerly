@@ -23,10 +23,9 @@ const tenantIDKey contextKey = "tenantID"
 // handler that needs to attribute an action to a caller rather than just a
 // tenant.
 //
-// NOTE: authMiddleware does not populate this yet (RED). In dev mode
-// (AllowUnverifiedJWT, no signature check) the sub claim is entirely
-// caller-controlled — flagged for security review once this lands for
-// real, same caveat as the rest of decodeUnverifiedJWT.
+// NOTE: in dev mode (AllowUnverifiedJWT, no signature check) the sub claim
+// is entirely caller-controlled — flagged for security review, same caveat
+// as the rest of decodeUnverifiedJWT.
 const subjectKey contextKey = "subject"
 
 // jwtLeeway absorbs small clock skew between the token issuer and this server
@@ -80,8 +79,11 @@ func (t *T) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Add tenant ID to context
+		// Add tenant ID (and, when present, the caller's subject) to context
 		ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)
+		if claims.Subject != "" {
+			ctx = context.WithValue(ctx, subjectKey, claims.Subject)
+		}
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -153,10 +155,8 @@ func getTenantID(ctx context.Context) (uuid.UUID, error) {
 }
 
 // getSubject extracts the JWT sub claim stashed in the request context by
-// authMiddleware.
-//
-// STUB: authMiddleware does not stash subjectKey yet, so this always
-// errors until GREEN wires it up. See TestAuthMiddleware_PropagatesSubject.
+// authMiddleware. Tokens without a sub claim stash nothing, so this errors
+// for them — callers decide whether an anonymous subject is acceptable.
 func getSubject(ctx context.Context) (string, error) {
 	subject, ok := ctx.Value(subjectKey).(string)
 	if !ok {
