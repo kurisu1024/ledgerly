@@ -56,8 +56,17 @@ and the executor's brief is "make these failing tests pass," not "implement X."
 | Stage | Agent |
 |---|---|
 | Write failing tests from the plan (RED) | `ecc:tdd-guide` |
-| Implement Go API / CLI (GREEN) | general-purpose + cc-skills-golang skills |
-| Implement React frontend (GREEN) | `frontend-developer` |
+| Implement Go API / CLI (GREEN) | `ledgerly-go-executor` (project agent) or `dev-workflows-fullstack:task-executor` |
+| Implement React frontend (GREEN) | `ledgerly-web-executor` (project agent) or `dev-workflows-fullstack:task-executor-frontend` / `frontend-developer` |
+
+The executors are repo-branded agents whose system prompts carry the audit-log
+invariants (tenant isolation, frozen hash format, 202 contract, fail-closed
+verification) so no dispatch can forget them. Any installed specialist executor from the accept-list above is compliant, and
+`general-purpose` is equally acceptable **provided the dispatch loads the
+relevant installed skills** (golang-*, frontend/react patterns) — skills are the
+hard requirement, agent branding is the convenience. Every build/fix executor
+must list the skills it invoked in its return; the dispatch-log audit flags
+skill gaps, not agent names.
 
 `make test` is the canonical check (keep `-p=1`). Frontend gets its own test
 runner under `web/` once scaffolded; wire it into `make test`.
@@ -76,7 +85,7 @@ CRITICAL/HIGH findings block the merge; the executor fixes and re-reviews.
 
 | Situation | Agent |
 |---|---|
-| Bug with a repro | `debugger` (diagnose) → tdd-guide writes the regression test → executor fixes |
+| Bug with a repro | `debugger` (diagnose) → tdd-guide writes the regression test → `ledgerly-go-executor` / `ledgerly-web-executor` fixes |
 | Go build/vet failure | `ecc:go-build-resolver` |
 | React build failure | `ecc:react-build-resolver` |
 

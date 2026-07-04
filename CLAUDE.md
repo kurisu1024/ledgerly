@@ -75,9 +75,17 @@ Issues live in this repo's GitHub Issues (`kurisu1024/ledgerly`) via the `gh` CL
 
 The five canonical labels, unmodified: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-### Team roster
+### Team roster — MANDATORY routing, not just for loops
 
-The agent dispatch table for autonomous work — which agent runs each pipeline stage (curate → plan → build tests-first → review → fix → maintain), across the Go API, React frontend (`web/`), and CLI (`cmd/ledgerly-cli/`). See `docs/agents/team-roster.md`.
+**Any feature, bug fix, or refactor in this repo — interactive session or autonomous loop — MUST run through the pipeline in `docs/agents/team-roster.md`.** Read that file before starting substantive work; it names the agent (Agent tool `subagent_type`) for each stage: curate → plan (`deep-plan`) → build tests-first → review → fix → maintain, across the Go API, React frontend (`web/`), and CLI (`cmd/ledgerly-cli/`).
+
+Non-negotiable even when the prompt pulls the other way:
+
+- **Failing tests exist before implementation code.** `ecc:tdd-guide` (or equivalent RED pass) first; the implementer's brief is "make these tests pass."
+- **Review before merge**: `ecc:go-reviewer` / `react-reviewer` by surface; **any diff touching auth, JWT, tenant scoping, chain hashing, or the rules API additionally gets `ecc:security-reviewer`**. CRITICAL/HIGH findings block.
+- Direct-to-implementation is allowed only for trivial mechanical edits (typos, doc wording, one-line config) — never for anything with a runtime surface.
+
+If you cannot spawn subagents in your context, follow the stages yourself in order and say so; do not skip stages silently.
 
 ### Domain docs
 
