@@ -53,6 +53,12 @@ func (c *apiClient) postEvent(ctx context.Context, body []byte) (statusCode int,
 	return resp.StatusCode, nil
 }
 
+// maxRulesEnvelopeBytes caps the rules-envelope decode: the server is
+// trusted and the transport authenticated, but a generous limit is cheap
+// defense in depth against a misbehaving endpoint. A truncated-at-cap
+// envelope fails to decode, keeping the caller's current rule set active.
+const maxRulesEnvelopeBytes = 1 << 20
+
 // fetchRules performs a conditional GET rulesURL with If-None-Match: etag.
 // notModified is true on a 304 (etag still current); an envelope with a
 // schema-version other than SchemaVersion is refused (err != nil), keeping
@@ -82,7 +88,7 @@ func (c *apiClient) fetchRules(ctx context.Context, etag string) (list RuleList,
 		return RuleList{}, "", false, fmt.Errorf("ledgerly: GET %s: unexpected status %d", c.rulesURL, resp.StatusCode)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRulesEnvelopeBytes)).Decode(&list); err != nil {
 		return RuleList{}, "", false, fmt.Errorf("ledgerly: decoding rules envelope: %w", err)
 	}
 	if list.SchemaVersion != SchemaVersion {

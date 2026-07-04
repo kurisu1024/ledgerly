@@ -99,6 +99,54 @@ func TestHandler_Tee_AlwaysReachesNext(t *testing.T) {
 	}
 }
 
+// minLevelSpyHandler is a spyHandler whose Enabled applies a level
+// threshold, modeling an app handler configured at e.g. INFO.
+type minLevelSpyHandler struct {
+	*spyHandler
+	min slog.Level
+}
+
+func (m *minLevelSpyHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= m.min
+}
+
+func TestHandler_Tee_SkipsRecordsNextDisabled_CaptureStillDelivers(t *testing.T) {
+	// next is configured at INFO; the active rule set wants project.delete
+	// down to debug. A matching DEBUG record must be captured and delivered
+	// to the server, but must NOT be forwarded to next — a server-pushed
+	// rule may never widen the app's own log output.
+	server := newCountingEventsServer(0)
+	defer server.Close()
+
+	next := &minLevelSpyHandler{spyHandler: newSpyHandler(true), min: slog.LevelInfo}
+	h := newTestHandler(t, next, WithEventsURL(server.URL+"/v1/events"))
+	logger := slog.New(h)
+
+	logger.Debug("delete", "event-type", "project.delete")
+
+	if !waitFor(t, time.Second, func() bool { return server.acceptedCount() >= 1 }) {
+		t.Fatal("expected the DEBUG record to be captured and delivered despite next disabling debug")
+	}
+	if got := next.recordCount(); got != 0 {
+		t.Fatalf("expected the DEBUG record NOT to be teed to next (next.Enabled(debug) is false), got %d records", got)
+	}
+
+	// An INFO record still tees normally.
+	logger.Info("delete", "event-type", "project.delete")
+	if got := next.recordCount(); got != 1 {
+		t.Fatalf("expected the INFO record to tee to next, got %d records", got)
+	}
+	if !waitFor(t, time.Second, func() bool { return server.acceptedCount() >= 2 }) {
+		t.Fatal("expected the INFO record to also be captured and delivered")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := h.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
 func TestHandler_Enabled_TrueWhenOnlyRulesWantLevel(t *testing.T) {
 	// next only enables Warn and above; the fallback rule set asks for
 	// debug. The SDK should still report Enabled(debug) == true so a

@@ -61,6 +61,11 @@ type sequencer struct {
 	persistedHW uint64
 
 	refills sync.WaitGroup
+
+	// diag, when set (once, before any next() call — read without
+	// synchronization), receives async refill errors as an operator
+	// diagnostic; the sync fallback in next() still surfaces them.
+	diag func(error)
 }
 
 // openSequencer opens (or creates, for a fresh dir) a sequence counter
@@ -188,6 +193,9 @@ func (s *sequencer) next() (uint64, error) {
 func (s *sequencer) refillAsync(target uint64) {
 	defer s.refills.Done()
 	err := s.reserve(target)
+	if err != nil && s.diag != nil {
+		s.diag(err)
+	}
 
 	s.mu.Lock()
 	if err == nil && target > s.highWater {
@@ -268,6 +276,20 @@ func writeFileSync(path string, v any) error {
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", filepath.Base(path), err)
+	}
+
+	// fsync the directory so the rename itself survives a crash — without
+	// it the new file's directory entry may not be durable.
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("opening dir of %s: %w", filepath.Base(path), err)
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return fmt.Errorf("syncing dir of %s: %w", filepath.Base(path), err)
+	}
+	if err := dir.Close(); err != nil {
+		return fmt.Errorf("closing dir of %s: %w", filepath.Base(path), err)
 	}
 	return nil
 }

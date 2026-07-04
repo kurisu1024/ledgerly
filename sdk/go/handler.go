@@ -1,6 +1,7 @@
 // Package ledgerly is the Go SDK for the ledgerly audit-log API (issue
 // #26, ADR-0001): a slog.Handler that tees an app's existing logging to
-// its current handler unconditionally, evaluates a locally-cached trigger
+// its current handler (at that handler's own level), evaluates a
+// locally-cached trigger
 // rule set against every eligible record, and ships matches into
 // ledgerly's async ingest path.
 package ledgerly
@@ -168,7 +169,7 @@ type handlerState struct {
 	// pipeline (i.e. were NOT self-suppressed). Exported to tests only via
 	// the unexported captureAttempts() accessor, to pin the self-suppression
 	// guards independent of whatever capture ends up doing.
-	captureAttempts int64
+	captureAttempts atomic.Int64
 }
 
 // Handler is a slog.Handler implementing the ledgerly SDK pipeline. See
@@ -234,13 +235,24 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 
 	buf, err := openBuffer(cfg.bufferDir)
 	if err != nil {
-		return nil, fmt.Errorf("ledgerly: opening disk buffer: %w", err)
+		// Release the sequencer's open reservation handle and restore its
+		// clean checkpoint — nothing was issued yet.
+		return nil, errors.Join(fmt.Errorf("ledgerly: opening disk buffer: %w", err), seq.close())
 	}
 	shared.buf = buf
 
 	shared.sender = newSender(shared.client, shared.buf, shared.queue, cfg.baseBackoff, cfg.maxBackoff)
 
 	h := &Handler{shared: shared, next: next}
+
+	// Surface async reservation failures as internal diagnostics: the sync
+	// fallback in next() will surface the error to the caller eventually,
+	// but operators should hear about a failing disk before that. Set
+	// before any next() call can spawn a refill, so refillAsync reads it
+	// without synchronization.
+	seq.diag = func(derr error) {
+		h.logInternal(context.Background(), slog.LevelWarn, "ledgerly: async sequence reservation failed", "error", derr.Error())
+	}
 
 	shared.poller = newPoller(shared.client, cfg.refreshInterval, cfg.asyncFirstFetch, func(rl RuleList, ev regimeEvent) {
 		rules := append([]Rule{}, rl.Rules...)
@@ -290,18 +302,23 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-// Handle tees r to next unconditionally (ADR-0001: non-audit logs still
-// reach the app's normal handler), then attempts to capture it as an audit
-// event. Every record entering Handle reaches the capture pipeline — there
+// Handle tees r to next when next enables r's level (ADR-0001: non-audit
+// logs still reach the app's normal handler — but a rule wanting a level
+// the app configured away must not widen the app's own log output), then
+// attempts to capture it as an audit event unconditionally. Every record
+// entering Handle reaches the capture pipeline — there
 // is deliberately no attr-based suppression signal available to callers
 // (a public opt-out would be an unauthenticated audit-evasion switch);
 // SDK-internal diagnostics avoid capture only by never entering Handle at
 // all (logInternal writes directly to next). Capture failures never
 // propagate to the app; only next's error does.
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
-	err := h.next.Handle(ctx, r)
+	var err error
+	if h.next.Enabled(ctx, r.Level) {
+		err = h.next.Handle(ctx, r)
+	}
 
-	atomic.AddInt64(&h.shared.captureAttempts, 1)
+	h.shared.captureAttempts.Add(1)
 	_ = h.capture(ctx, r)
 
 	return err
@@ -310,7 +327,7 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 // captureAttempts reports how many Handle() calls reached the capture
 // pipeline (i.e. were not self-suppressed). Test-only accessor.
 func (h *Handler) captureAttempts() int64 {
-	return atomic.LoadInt64(&h.shared.captureAttempts)
+	return h.shared.captureAttempts.Load()
 }
 
 // capture stamps, matches, and (on a match) enqueues r for delivery. The
