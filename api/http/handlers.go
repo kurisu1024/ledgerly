@@ -2,12 +2,19 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/kurisu1024/ledgerly/api/events"
 	"github.com/kurisu1024/ledgerly/internal/storage"
 )
+
+// maxEventBodyBytes caps POST /v1/events request bodies (issue #33). An
+// accepted event is embedded into the permanent audit chain, so an unbounded
+// body is an unbounded chain-growth lever. 1 MiB is an order of magnitude
+// above any legitimate event payload. Mirrors maxRuleBodyBytes in rules.go.
+const maxEventBodyBytes = 1 << 20
 
 // CreateEvent handles POST requests to create a new event for a specific tenant.
 // URL format: POST /v1/events
@@ -20,10 +27,17 @@ func (t *T) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode the event from request body
+	// Decode the event from request body, enforcing the transport cap
+	r.Body = http.MaxBytesReader(w, r.Body, maxEventBodyBytes)
+
 	var apiEvent events.Event
 	if err := json.NewDecoder(r.Body).Decode(&apiEvent); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+		}
 		return
 	}
 
