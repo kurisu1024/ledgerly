@@ -1,11 +1,20 @@
 
 
 .PHONY: test
-test: test-go test-web
+test: test-go test-web test-sdk
 
+# GOWORK=off pins these to the root module only. The repo root also hosts
+# a go.work (for sdk/go dev ergonomics); in workspace mode ./... matches
+# packages across every workspace module, which would silently pull
+# sdk/go into the root module's fmt/vet/test — GOWORK=off keeps this
+# target's behavior identical to before go.work existed.
 .PHONY: test-go
 test-go:
-	go fmt ./... && go vet ./... && go test -v -p=1 -cover ./...
+	GOWORK=off go fmt ./... && GOWORK=off go vet ./... && GOWORK=off go test -v -p=1 -cover ./...
+
+.PHONY: test-sdk
+test-sdk:
+	cd sdk/go && go test -race -cover ./...
 
 # npm ci writes web/node_modules/.package-lock.json; use it as a stamp so
 # deps are reinstalled when the lockfile changes, not only when node_modules
