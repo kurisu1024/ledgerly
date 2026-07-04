@@ -35,6 +35,11 @@ type Config struct {
 	ChainSize int
 	// FlushInterval is how often the worker flushes partial chains to storage
 	FlushInterval time.Duration
+	// WriteTimeout bounds each storage write issued by the worker, including
+	// the final drain-and-flush on shutdown. Zero means
+	// storage.DefaultWriteTimeout. Without a bound, a hung backend at
+	// shutdown would block the flush forever and the process never exits.
+	WriteTimeout time.Duration
 	// JWTPublicKey is the RSA public key for verifying JWT tokens. When set,
 	// every token's RS256 signature and expiry are verified.
 	JWTPublicKey *rsa.PublicKey
@@ -50,6 +55,7 @@ func DefaultConfig() Config {
 		QueueSize:     1000,
 		ChainSize:     100,
 		FlushInterval: 5 * time.Second,
+		WriteTimeout:  storage.DefaultWriteTimeout,
 	}
 }
 
@@ -58,8 +64,14 @@ func DefaultConfig() Config {
 func New(ctx context.Context, stor storage.Storage, ruleStore storage.RuleStore, cfg Config, logger *zap.Logger) *T {
 	queue := make(chan audit.Event, cfg.QueueSize)
 
-	// Create chain writer that writes to storage
-	chainWriter := storage.NewChainWriter(ctx, stor)
+	// Create chain writer that writes to storage. The writer's ctx must
+	// survive cancellation of the run ctx: service.Run cancels ctx to begin
+	// shutdown, and the worker's final drain-and-flush happens *after* that
+	// — a cancellation-respecting backend (Postgres) would otherwise refuse
+	// the flush and silently drop 202-acknowledged events. WriteTimeout
+	// bounds each individual write instead, so a hung backend cannot block
+	// shutdown forever.
+	chainWriter := storage.NewChainWriter(context.WithoutCancel(ctx), stor, cfg.WriteTimeout)
 
 	// Create and start worker
 	worker := audit.NewBatchInsertWorker(

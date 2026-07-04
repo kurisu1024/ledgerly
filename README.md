@@ -75,6 +75,14 @@ A read-only web inspection UI (paste a JWT, view and verify chains client-side) 
 
 ---
 
+## Running with Postgres
+
+Set `LEDGERLY_POSTGRES_DSN` to run against a durable backend (apply the schema first with `psql "$DSN" -f db/schema.sql`); the Postgres integration tests run via `make test-postgres`. Unset, the server uses in-memory storage.
+
+**Warning:** never point `LEDGERLY_TEST_DSN` at a database you care about — the test harness creates **and drops** schemas in the target database. Use a disposable container (e.g. `postgres:17-alpine`).
+
+---
+
 ## Who Ledgerly is For
 
 - B2B SaaS teams

@@ -1,19 +1,23 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-
+-- audit_events: JSONB-authoritative event log, keyed by (tenant_id, chain_id,
+-- position). The stored `event` JSONB is the byte-for-byte marshaling of
+-- audit.Event, including the nanosecond-precision OccurredAt timestamp that
+-- VerifyChain's hash depends on. A typed TIMESTAMPTZ column truncates to
+-- microseconds and would silently break chain verification after a restart
+-- — the exact failure this schema exists to prevent. `seq` is a
+-- monotonically increasing identity used only for insertion-order queries;
+-- it plays no role in the hash chain itself.
 CREATE TABLE audit_events (
-  id            BIGSERIAL PRIMARY KEY,
-  tenant_id     UUID        NOT NULL,
-  occurred_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  seq         BIGINT GENERATED ALWAYS AS IDENTITY,
+  tenant_id   UUID  NOT NULL,
+  chain_id    UUID  NOT NULL,
+  position    INT   NOT NULL,
+  event       JSONB NOT NULL,
 
-  actor         JSONB       NOT NULL,
-  action        TEXT        NOT NULL,
-  resource      JSONB       NOT NULL,
-  metadata      JSONB,
-
-  prev_hash     BYTEA       NOT NULL,
-  event_hash    BYTEA       NOT NULL
+  PRIMARY KEY (tenant_id, chain_id, position)
 );
+
+CREATE INDEX idx_audit_events_tenant ON audit_events (tenant_id);
+CREATE INDEX idx_audit_events_seq ON audit_events (seq);
 
 CREATE OR REPLACE FUNCTION forbid_mutation()
 RETURNS trigger AS $$
@@ -30,17 +34,15 @@ CREATE TRIGGER no_delete
 BEFORE DELETE ON audit_events
 FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
 
-CREATE INDEX idx_audit_tenant_time
-ON audit_events (tenant_id, occurred_at);
+-- tenant_rules: the current trigger-rule set per tenant (ADR-0002). Unlike
+-- audit_events this table is mutated in place — RuleStore.MutateRules
+-- replaces a tenant's whole rule set (delete + insert) inside one
+-- transaction guarded by a per-tenant advisory lock, matching the
+-- in-memory backend's semantics.
+CREATE TABLE tenant_rules (
+  tenant_id UUID  NOT NULL,
+  rule_id   UUID  NOT NULL,
+  rule      JSONB NOT NULL,
 
-CREATE INDEX idx_audit_action
-ON audit_events (action);
-
-CREATE INDEX idx_audit_actor
-ON audit_events
-USING GIN ((actor->'id'));
-
-CREATE INDEX idx_audit_resource
-ON audit_events
-USING GIN ((resource->'id'));
-
+  PRIMARY KEY (tenant_id, rule_id)
+);

@@ -3,14 +3,24 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	httpapi "github.com/kurisu1024/ledgerly/api/http"
+	"github.com/kurisu1024/ledgerly/db"
 	"github.com/kurisu1024/ledgerly/internal/audit"
+	"github.com/kurisu1024/ledgerly/internal/storage"
 	"github.com/kurisu1024/ledgerly/internal/storage/memory"
+	"github.com/kurisu1024/ledgerly/internal/storage/postgres"
 	"go.uber.org/zap"
 )
+
+// EnvPostgresDSN selects the Postgres storage backend when set. The schema
+// (db/schema.sql) must already be applied. Unset, the service runs on the
+// in-memory backend.
+const EnvPostgresDSN = "LEDGERLY_POSTGRES_DSN"
 
 var log *zap.Logger
 
@@ -53,12 +63,34 @@ type T struct {
 
 // Run starts the HTTP server and listens for requests until context is cancelled
 func (s *T) Run(ctx context.Context) error {
-	// Create HTTP API handler. This is the dev composition (in-memory
-	// storage, hardcoded port), so it explicitly opts in to unverified JWTs
-	// to keep `make load-events` working without a signing key.
+	// Pick the storage backend: Postgres when EnvPostgresDSN is set,
+	// in-memory otherwise. A set-but-broken DSN is a hard startup error —
+	// an audit log must never silently fall back to volatile storage.
+	var stor storage.Storage
+	var ruleStore storage.RuleStore
+	if dsn := os.Getenv(EnvPostgresDSN); dsn != "" {
+		pool, err := db.NewPool(ctx, dsn)
+		if err != nil {
+			return fmt.Errorf("connecting to postgres (%s): %w", EnvPostgresDSN, err)
+		}
+		// Registered before handler.Close below, so LIFO ordering closes
+		// the handler (final worker flush) first, then the pool.
+		defer pool.Close()
+		stor = postgres.New(pool)
+		ruleStore = postgres.NewRules(pool)
+		log.Info("using postgres storage backend", zap.String("env", EnvPostgresDSN))
+	} else {
+		stor = memory.New()
+		ruleStore = memory.NewRules()
+		log.Info("using in-memory storage backend", zap.String("env", EnvPostgresDSN+" not set"))
+	}
+
+	// Create HTTP API handler. This is the dev composition (hardcoded
+	// port), so it explicitly opts in to unverified JWTs to keep
+	// `make load-events` working without a signing key.
 	cfg := httpapi.DefaultConfig()
 	cfg.AllowUnverifiedJWT = true
-	handler := httpapi.New(ctx, memory.New(), memory.NewRules(), cfg, log)
+	handler := httpapi.New(ctx, stor, ruleStore, cfg, log)
 	defer handler.Close()
 
 	// Create HTTP server

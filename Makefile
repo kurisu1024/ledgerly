@@ -7,6 +7,13 @@ test: test-go test-web
 test-go:
 	go fmt ./... && go vet ./... && go test -v -p=1 -cover ./...
 
+# Runs only the Postgres integration tests against a real database. Set
+# LEDGERLY_TEST_DSN to override the default disposable-container DSN.
+.PHONY: test-postgres
+test-postgres:
+	LEDGERLY_TEST_DSN=$${LEDGERLY_TEST_DSN:-postgres://postgres:test@localhost:5433/postgres} \
+		go test -v -p=1 ./internal/storage/postgres/...
+
 # npm ci writes web/node_modules/.package-lock.json; use it as a stamp so
 # deps are reinstalled when the lockfile changes, not only when node_modules
 # is missing. `find -newer` keeps the check POSIX sh.
