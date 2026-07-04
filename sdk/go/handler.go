@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,6 +46,7 @@ type config struct {
 	queueSize       int
 	baseBackoff     time.Duration
 	maxBackoff      time.Duration
+	insecureHTTP    bool
 }
 
 func defaultConfig() config {
@@ -87,6 +90,42 @@ func WithQueueSize(n int) Option { return func(c *config) { c.queueSize = n } }
 // WithBackoff overrides the default base/max retry backoff.
 func WithBackoff(base, max time.Duration) Option {
 	return func(c *config) { c.baseBackoff = base; c.maxBackoff = max }
+}
+
+// WithInsecureHTTP allows plain-http events/rules URLs to non-loopback
+// hosts. Without it, NewHandler rejects any http:// endpoint except
+// localhost/loopback (the dev flow): audit events carry an API key and
+// sensitive payloads, so cleartext transport must be an explicit opt-in.
+func WithInsecureHTTP() Option { return func(c *config) { c.insecureHTTP = true } }
+
+// validateEndpointURL enforces the transport scheme for a configured
+// endpoint: https always passes; http passes only for loopback hosts or
+// with the WithInsecureHTTP opt-in; anything else is rejected.
+func validateEndpointURL(name, raw string, allowInsecure bool) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("ledgerly: invalid %s URL %q: %w", name, raw, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure || isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("ledgerly: %s URL %q uses plain http to a non-loopback host; use https, or opt in explicitly with WithInsecureHTTP()", name, raw)
+	default:
+		return fmt.Errorf("ledgerly: %s URL %q must use https (or http via WithInsecureHTTP()), got scheme %q", name, raw, u.Scheme)
+	}
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // handlerState is the mutable core shared by a Handler and every clone
@@ -154,6 +193,16 @@ func NewHandler(fallback []Rule, next slog.Handler, opts ...Option) (*Handler, e
 	}
 	if cfg.bufferDir == "" {
 		return nil, ErrMissingBufferDir
+	}
+	if cfg.eventsURL != "" {
+		if err := validateEndpointURL("events", cfg.eventsURL, cfg.insecureHTTP); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.rulesURL != "" {
+		if err := validateEndpointURL("rules", cfg.rulesURL, cfg.insecureHTTP); err != nil {
+			return nil, err
+		}
 	}
 
 	shared := &handlerState{
