@@ -45,13 +45,44 @@ func ParseRuleID(id string) (uuid.UUID, error) {
 }
 
 // ToDomain converts the wire DTO to the internal domain type, scoping it to
-// tenantID — the tenant on the wire, if any, is never trusted.
-//
-// STUB: not implemented yet — always errors. Real conversion (including
-// rejecting unknown SchemaVersion and delegating to domain.Validate) lands
-// in GREEN.
+// tenantID — the tenant on the wire, if any, is never trusted. Unknown
+// schema versions are rejected here, and the result must pass
+// domain.Validate. An empty wire ID maps to uuid.Nil; the caller assigns
+// server-side IDs on create.
 func ToDomain(tenantID uuid.UUID, r Rule) (domain.Rule, error) {
-	return domain.Rule{}, fmt.Errorf("rules: ToDomain not implemented")
+	if r.SchemaVersion != domain.SchemaVersion {
+		return domain.Rule{}, fmt.Errorf("unknown schema-version %d (this build understands %d)", r.SchemaVersion, domain.SchemaVersion)
+	}
+
+	id := uuid.Nil
+	if r.ID != "" {
+		parsed, err := ParseRuleID(r.ID)
+		if err != nil {
+			return domain.Rule{}, err
+		}
+		id = parsed
+	}
+
+	var fields []domain.FieldCond
+	if r.Fields != nil {
+		fields = make([]domain.FieldCond, 0, len(r.Fields))
+		for _, f := range r.Fields {
+			fields = append(fields, domain.FieldCond{Key: f.Key, Op: f.Op, Value: f.Value})
+		}
+	}
+
+	d := domain.Rule{
+		ID:            id,
+		TenantID:      tenantID,
+		SchemaVersion: r.SchemaVersion,
+		EventType:     r.EventType,
+		LevelAtLeast:  r.LevelAtLeast,
+		Fields:        fields,
+	}
+	if err := domain.Validate(d); err != nil {
+		return domain.Rule{}, fmt.Errorf("validating rule: %w", err)
+	}
+	return d, nil
 }
 
 // FromDomain converts a domain rule to its wire form.
