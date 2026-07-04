@@ -1,7 +1,9 @@
 # ledgerly Go SDK
 
 A `log/slog` handler that tees your application's logging to its existing
-handler unconditionally, evaluates a locally cached trigger rule-set
+handler at that handler's own level (server-pushed rules can widen what
+the SDK captures, never what your app prints), evaluates a locally cached
+trigger rule-set
 against every eligible record, and ships matches into ledgerly's async
 ingest path. See issue #26 and ADR-0001.
 
