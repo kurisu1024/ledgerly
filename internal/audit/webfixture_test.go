@@ -72,6 +72,63 @@ func TestGenerateWebFixtures(t *testing.T) {
 	t.Logf("wrote %s (%d cases)", path, len(fixture.Cases))
 }
 
+// TestGoldenFixturesVerifyChainReport pins VerifyChainReport to the committed
+// golden fixtures: for every case the structured result's status, reason, and
+// failed index must match the fixture's Expected fields, so the Go verifier
+// and the web verifier stay asserted against the same goldens.
+func TestGoldenFixturesVerifyChainReport(t *testing.T) {
+	path := filepath.Join("..", "..", "web", "src", "lib", "verify", "__fixtures__", "golden-chains.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden fixture: %v", err)
+	}
+	var fixture webFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("unmarshal golden fixture: %v", err)
+	}
+	if len(fixture.Cases) == 0 {
+		t.Fatal("golden fixture has no cases")
+	}
+
+	for _, c := range fixture.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			chain := audit.EventChain{ID: uuid.MustParse(c.Chain.ID)}
+			for _, we := range c.Chain.Events {
+				ae, err := events.ToAuditEvent(we)
+				if err != nil {
+					t.Fatalf("round-trip event: %v", err)
+				}
+				chain.Events = append(chain.Events, ae)
+			}
+
+			got := audit.VerifyChainReport(chain)
+
+			wantStatus := audit.StatusTampered
+			wantReason := audit.VerifyReason(c.Expected.Reason)
+			wantFailedIndex := -1
+			if c.Expected.Verified {
+				wantStatus = audit.StatusVerified
+				wantReason = audit.ReasonNone
+			} else if c.Expected.FailedIndex != nil {
+				wantFailedIndex = *c.Expected.FailedIndex
+			}
+
+			if got.Status != wantStatus {
+				t.Errorf("Status = %q, want %q", got.Status, wantStatus)
+			}
+			if got.Reason != wantReason {
+				t.Errorf("Reason = %q, want %q", got.Reason, wantReason)
+			}
+			if got.FailedIndex != wantFailedIndex {
+				t.Errorf("FailedIndex = %d, want %d", got.FailedIndex, wantFailedIndex)
+			}
+			if got.Length != len(chain.Events) {
+				t.Errorf("Length = %d, want %d", got.Length, len(chain.Events))
+			}
+		})
+	}
+}
+
 type webFixture struct {
 	// GenesisHash is the anchor every chain's first event links to.
 	GenesisHash []byte           `json:"genesis-hash"`

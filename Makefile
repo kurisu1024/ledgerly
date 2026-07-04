@@ -18,6 +18,10 @@ test-web:
 	fi
 	npm --prefix web run test:run
 
+.PHONY: build-cli
+build-cli:
+	go build -o bin/ledgerly-cli ./cmd/ledgerly-cli
+
 .PHONY: run
 run:
 	go run ./cmd/ledgerly/main.go

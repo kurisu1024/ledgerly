@@ -34,3 +34,6 @@ export.json
 # Editor/IDE
 .idea/
 .vscode/
+
+# Built CLI binaries
+bin/
