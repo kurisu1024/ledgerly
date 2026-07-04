@@ -1,6 +1,9 @@
 package audit
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // CutAtTime returns the longest genesis-anchored prefix of chain in which
 // every event's OccurredAt is at-or-before t (inclusive nanosecond boundary
@@ -15,10 +18,18 @@ import "time"
 // the append-ordered chain, never as a filter predicate applied per-event
 // independent of position.
 //
-// CutAtTime does not mutate chain; it returns a new EventChain value.
+// CutAtTime does not mutate chain; it returns a new EventChain value whose
+// Events slice is a copy, so callers may modify the result freely.
 func CutAtTime(chain EventChain, t time.Time) EventChain {
-	// STUB (RED phase, issue #20): returns chain unchanged so callers and
-	// tests compile. Real prefix-cut and copy-on-return semantics land in
-	// the GREEN pass.
-	return chain
+	cut := len(chain.Events)
+	for i, e := range chain.Events {
+		if e.OccurredAt.After(t) {
+			cut = i
+			break
+		}
+	}
+	return EventChain{
+		ID:     chain.ID,
+		Events: slices.Clone(chain.Events[:cut]),
+	}
 }

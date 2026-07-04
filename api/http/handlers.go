@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kurisu1024/ledgerly/api/events"
+	"github.com/kurisu1024/ledgerly/internal/audit"
 	"github.com/kurisu1024/ledgerly/internal/storage"
 )
 
@@ -68,8 +70,16 @@ func (t *T) CreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExportEvents handles GET requests to export all events for a specific tenant.
-// URL format: GET /v1/export?blockID=uuid (optional)
-// Tenant ID is extracted from JWT token via auth middleware
+// URL format: GET /v1/export?blockID=uuid&as-of=RFC3339Nano (both optional)
+// Tenant ID is extracted from JWT token via auth middleware.
+//
+// as-of cuts each stored chain in append order at the given timestamp
+// (inclusive to the nanosecond): the walk stops at the first event whose
+// occurred-at is strictly after the cut, so every returned chain is a
+// verifiable genesis-anchored prefix — never a timestamp-filtered subset.
+// Chains whose cut is empty are omitted entirely. Only flushed blocks are
+// visible: an event accepted with 202 but not yet flushed never appears,
+// regardless of as-of.
 func (t *T) ExportEvents(w http.ResponseWriter, r *http.Request) {
 	// Extract tenant ID from context (set by auth middleware)
 	tenantID, err := getTenantID(r.Context())
@@ -89,6 +99,17 @@ func (t *T) ExportEvents(w http.ResponseWriter, r *http.Request) {
 		opts.BlockIDs = []uuid.UUID{blockID}
 	}
 
+	var asOf time.Time
+	hasAsOf := false
+	if asOfStr := r.URL.Query().Get("as-of"); asOfStr != "" {
+		asOf, err = time.Parse(time.RFC3339Nano, asOfStr)
+		if err != nil {
+			http.Error(w, "Invalid as-of parameter", http.StatusBadRequest)
+			return
+		}
+		hasAsOf = true
+	}
+
 	// Fetch blocks from storage
 	blocks, err := t.storage.FetchBlocks(r.Context(), tenantID, opts)
 	if err != nil {
@@ -96,10 +117,17 @@ func (t *T) ExportEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert blocks to API events
+	// Convert blocks to API events, applying the as-of cut per chain
 	var allEvents []events.Event
 	for _, block := range blocks {
-		for _, auditEvent := range block.Chain.Events {
+		chain := block.Chain
+		if hasAsOf {
+			chain = audit.CutAtTime(chain, asOf)
+			if len(chain.Events) == 0 {
+				continue
+			}
+		}
+		for _, auditEvent := range chain.Events {
 			allEvents = append(allEvents, events.FromAuditEvent(auditEvent))
 		}
 	}
