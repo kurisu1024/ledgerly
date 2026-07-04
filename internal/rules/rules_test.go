@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +76,85 @@ func TestValidate_RejectsEqualsWithEmptyValue(t *testing.T) {
 	r.Fields = []rules.FieldCond{{Key: "k", Op: rules.OpEquals, Value: ""}}
 	if err := rules.Validate(r); err == nil {
 		t.Fatal("expected error for equals condition with empty value, got nil")
+	}
+}
+
+// TestValidate_Bounds pins the size limits added for issue #24: every
+// accepted rule is embedded twice into the permanent audit chain, so
+// unbounded rule content is an unbounded chain-growth lever. At-limit
+// values must pass; one-over must fail.
+func TestValidate_Bounds(t *testing.T) {
+	manyFields := func(n int) []rules.FieldCond {
+		fs := make([]rules.FieldCond, 0, n)
+		for i := 0; i < n; i++ {
+			fs = append(fs, rules.FieldCond{Key: "k" + strings.Repeat("x", i), Op: rules.OpExists})
+		}
+		return fs
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*rules.Rule)
+		wantErr bool
+	}{
+		{
+			name:   "event-type at limit passes",
+			mutate: func(r *rules.Rule) { r.EventType = strings.Repeat("a", rules.MaxStringBytes) },
+		},
+		{
+			name:    "event-type over limit fails",
+			mutate:  func(r *rules.Rule) { r.EventType = strings.Repeat("a", rules.MaxStringBytes+1) },
+			wantErr: true,
+		},
+		{
+			name: "field key at limit passes",
+			mutate: func(r *rules.Rule) {
+				r.Fields = []rules.FieldCond{{Key: strings.Repeat("k", rules.MaxStringBytes), Op: rules.OpExists}}
+			},
+		},
+		{
+			name: "field key over limit fails",
+			mutate: func(r *rules.Rule) {
+				r.Fields = []rules.FieldCond{{Key: strings.Repeat("k", rules.MaxStringBytes+1), Op: rules.OpExists}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "field value at limit passes",
+			mutate: func(r *rules.Rule) {
+				r.Fields = []rules.FieldCond{{Key: "k", Op: rules.OpEquals, Value: strings.Repeat("v", rules.MaxStringBytes)}}
+			},
+		},
+		{
+			name: "field value over limit fails",
+			mutate: func(r *rules.Rule) {
+				r.Fields = []rules.FieldCond{{Key: "k", Op: rules.OpEquals, Value: strings.Repeat("v", rules.MaxStringBytes+1)}}
+			},
+			wantErr: true,
+		},
+		{
+			name:   "fields at limit passes",
+			mutate: func(r *rules.Rule) { r.Fields = manyFields(rules.MaxFieldConds) },
+		},
+		{
+			name:    "fields over limit fails",
+			mutate:  func(r *rules.Rule) { r.Fields = manyFields(rules.MaxFieldConds + 1) },
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := validRule()
+			tc.mutate(&r)
+			err := rules.Validate(r)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected rule to pass validation, got %v", err)
+			}
+		})
 	}
 }
 

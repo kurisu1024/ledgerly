@@ -28,6 +28,31 @@ var (
 	errRuleNotFound   = errors.New("rule not found")
 )
 
+// maxRuleBodyBytes caps CreateRule/UpdateRule request bodies (issue #24).
+// An accepted rule is embedded twice into the permanent audit chain, so an
+// unbounded body is an unbounded chain-growth lever. 64 KiB is orders of
+// magnitude above the largest valid rule (bounded by domain.Validate).
+// Repo-wide transport limits are tracked separately (issue #33).
+const maxRuleBodyBytes = 64 << 10
+
+// decodeRuleBody decodes a rule mutation body, enforcing maxRuleBodyBytes.
+// On failure it writes the error response — 413 for an oversized body, 400
+// otherwise — and returns ok == false.
+func decodeRuleBody(w http.ResponseWriter, r *http.Request) (wire apirules.Rule, ok bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRuleBodyBytes)
+
+	if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+		}
+		return apirules.Rule{}, false
+	}
+	return wire, true
+}
+
 // ListRules handles GET /v1/rules.
 func (t *T) ListRules(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := getTenantID(r.Context())
@@ -77,9 +102,8 @@ func (t *T) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	subject, _ := getSubject(r.Context())
 
-	var wire apirules.Rule
-	if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	wire, ok := decodeRuleBody(w, r)
+	if !ok {
 		return
 	}
 	wire.ID = "" // server-assigned
@@ -95,6 +119,9 @@ func (t *T) CreateRule(w http.ResponseWriter, r *http.Request) {
 	rule.UpdatedAt = now
 
 	_, err = t.ruleStore.MutateRules(r.Context(), tenantID, func(current []domain.Rule) ([]domain.Rule, error) {
+		if len(current) >= domain.MaxRulesPerTenant {
+			return nil, domain.ErrTooManyRules
+		}
 		next := append(current, rule)
 		if err := t.enqueueRuleAudit(tenantID, subject, domain.ActionRuleCreated, rule.ID, nil, &rule, next); err != nil {
 			return nil, err
@@ -152,9 +179,8 @@ func (t *T) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var wire apirules.Rule
-	if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	wire, ok := decodeRuleBody(w, r)
+	if !ok {
 		return
 	}
 	wire.ID = "" // the path ID is authoritative
@@ -277,13 +303,17 @@ func (t *T) enqueueRuleAudit(tenantID uuid.UUID, subject, action string, ruleID 
 
 // writeRuleMutationError maps a MutateRules failure to its HTTP status:
 // full audit queue → 503 (retryable, store unchanged), missing rule → 404,
-// anything else → 500.
+// tenant at the rule cap → 409 Conflict (the create conflicts with the
+// current state of the tenant's rule collection; retryable after deleting
+// a rule), anything else → 500.
 func writeRuleMutationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errAuditQueueFull):
 		http.Error(w, "Event queue is full", http.StatusServiceUnavailable)
 	case errors.Is(err, errRuleNotFound):
 		http.Error(w, "Rule not found", http.StatusNotFound)
+	case errors.Is(err, domain.ErrTooManyRules):
+		http.Error(w, fmt.Sprintf("Rule limit reached: a tenant may hold at most %d rules; delete an existing rule first", domain.MaxRulesPerTenant), http.StatusConflict)
 	default:
 		http.Error(w, "Failed to mutate rules", http.StatusInternalServerError)
 	}

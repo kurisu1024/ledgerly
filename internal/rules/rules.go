@@ -27,6 +27,27 @@ const (
 	OpExists = "exists"
 )
 
+// Resource bounds on tenant rules. Every accepted rule mutation embeds the
+// rule's canonical JSON twice into the permanent audit chain (old-rule /
+// new-rule metadata), so unbounded rule content or count is an unbounded
+// chain-growth lever. Enforced by Validate (per-rule bounds) and by the
+// CreateRule mutation in api/http (MaxRulesPerTenant).
+const (
+	// MaxFieldConds is the maximum number of field conditions per rule.
+	MaxFieldConds = 16
+	// MaxStringBytes is the maximum length in bytes of EventType and of
+	// each field condition's Key and Value.
+	MaxStringBytes = 256
+	// MaxRulesPerTenant caps how many rules a single tenant may hold.
+	MaxRulesPerTenant = 100
+)
+
+// ErrTooManyRules is returned when a create would push a tenant past
+// MaxRulesPerTenant. The HTTP layer maps it to 409 Conflict: the request is
+// well-formed but conflicts with the current state of the tenant's rule
+// collection, and becomes retryable once a rule is deleted.
+var ErrTooManyRules = fmt.Errorf("tenant already holds the maximum of %d rules", MaxRulesPerTenant)
+
 // FieldCond matches a single field on an incoming event. Value is ignored
 // for OpExists.
 type FieldCond struct {
@@ -60,9 +81,10 @@ var levels = map[string]bool{
 }
 
 // Validate checks that r is well-formed: SchemaVersion == SchemaVersion,
-// EventType is non-empty, every FieldCond has a known Op (and a non-empty
-// Value when Op == OpEquals), and at least one condition (LevelAtLeast or a
-// FieldCond) is present.
+// EventType is non-empty and within MaxStringBytes, at most MaxFieldConds
+// field conditions each with Key/Value within MaxStringBytes, every
+// FieldCond has a known Op (and a non-empty Value when Op == OpEquals),
+// and at least one condition (LevelAtLeast or a FieldCond) is present.
 func Validate(r Rule) error {
 	if r.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unknown schema-version %d (this build understands %d)", r.SchemaVersion, SchemaVersion)
@@ -70,12 +92,24 @@ func Validate(r Rule) error {
 	if r.EventType == "" {
 		return fmt.Errorf("event-type is required")
 	}
+	if len(r.EventType) > MaxStringBytes {
+		return fmt.Errorf("event-type exceeds %d bytes", MaxStringBytes)
+	}
 	if r.LevelAtLeast != "" && !levels[r.LevelAtLeast] {
 		return fmt.Errorf("unknown level-at-least %q", r.LevelAtLeast)
+	}
+	if len(r.Fields) > MaxFieldConds {
+		return fmt.Errorf("too many field conditions: %d (max %d)", len(r.Fields), MaxFieldConds)
 	}
 	for i, f := range r.Fields {
 		if f.Key == "" {
 			return fmt.Errorf("fields[%d]: key is required", i)
+		}
+		if len(f.Key) > MaxStringBytes {
+			return fmt.Errorf("fields[%d]: key exceeds %d bytes", i, MaxStringBytes)
+		}
+		if len(f.Value) > MaxStringBytes {
+			return fmt.Errorf("fields[%d]: value exceeds %d bytes", i, MaxStringBytes)
 		}
 		switch f.Op {
 		case OpEquals:

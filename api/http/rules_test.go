@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,4 +358,126 @@ func TestRules_ChainedAuditEvent_OnCreate(t *testing.T) {
 		}
 	}
 	t.Logf("\t%s\tRule creation chained as a verifiable audit event", pass)
+}
+
+// doRawJSON sends a raw (pre-marshaled) body so tests can exceed the
+// transport limit without json.Marshal getting in the way.
+func doRawJSON(t *testing.T, server *apihttp.T, method, path string, tenantID uuid.UUID, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+createJWT(tenantID))
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+	return w
+}
+
+// TestRuleMutation_OversizedBody_413 pins the issue #24 transport limit on
+// rule mutations: bodies over 64 KiB are rejected with 413 before decoding,
+// the rule store is unchanged, and no audit event is chained.
+func TestRuleMutation_OversizedBody_413(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := testConfig()
+	cfg.ChainSize = 1000
+	cfg.FlushInterval = time.Hour
+	server, store, ruleStore := newRuleServer(ctx, cfg)
+	defer server.Close()
+
+	tenantID := uuid.New()
+
+	t.Log("\tGiven one valid rule already exists")
+	createW := doJSON(t, server, http.MethodPost, "/v1/rules", tenantID, newTestRule("project.delete"))
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("\t%s\tExpected 201 creating seed rule, got %d: %s", fail, createW.Code, createW.Body.String())
+	}
+	var created apirules.Rule
+	if err := json.NewDecoder(createW.Body).Decode(&created); err != nil {
+		t.Fatalf("\t%s\tDecoding created rule: %v", fail, err)
+	}
+
+	oversized := []byte(`{"schema-version":1,"event-type":"project.delete","level-at-least":"` +
+		strings.Repeat("a", 65<<10) + `"}`)
+
+	t.Log("\tWhen POSTing a rule body larger than 64 KiB")
+	postW := doRawJSON(t, server, http.MethodPost, "/v1/rules", tenantID, oversized)
+	if postW.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("\t%s\tExpected 413 for oversized create, got %d: %s", fail, postW.Code, postW.Body.String())
+	}
+
+	t.Log("\tAnd PUTting a rule body larger than 64 KiB")
+	putW := doRawJSON(t, server, http.MethodPut, "/v1/rules/"+created.ID, tenantID, oversized)
+	if putW.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("\t%s\tExpected 413 for oversized update, got %d: %s", fail, putW.Code, putW.Body.String())
+	}
+
+	t.Log("\tThen the rule store must be unchanged")
+	rs, err := ruleStore.ListRules(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("\t%s\tListRules: %v", fail, err)
+	}
+	if len(rs) != 1 || rs[0].ID.String() != created.ID || rs[0].LevelAtLeast != "error" {
+		t.Fatalf("\t%s\tExpected only the unmodified seed rule, got %+v", fail, rs)
+	}
+
+	t.Log("\tAnd no audit event was chained for the rejected mutations")
+	if err := server.Flush(ctx); err != nil {
+		t.Fatalf("\t%s\tFlush: %v", fail, err)
+	}
+	blocks, err := store.FetchBlocks(ctx, tenantID, storage.FetchOptions{})
+	if err != nil {
+		t.Fatalf("\t%s\tFetchBlocks: %v", fail, err)
+	}
+	var creates, updates int
+	for _, block := range blocks {
+		for _, e := range block.Chain.Events {
+			switch e.Action {
+			case domainrules.ActionRuleCreated:
+				creates++
+			case domainrules.ActionRuleUpdated:
+				updates++
+			}
+		}
+	}
+	if creates != 1 || updates != 0 {
+		t.Fatalf("\t%s\tExpected exactly 1 rule.created and 0 rule.updated events, got %d/%d", fail, creates, updates)
+	}
+	t.Logf("\t%s\tOversized bodies rejected with 413, store and chain untouched", pass)
+}
+
+// TestRules_PerTenantCap pins the issue #24 rules-per-tenant cap: once a
+// tenant holds MaxRulesPerTenant rules, further creates fail with 409 and
+// the store stays at the cap.
+func TestRules_PerTenantCap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, _, ruleStore := newRuleServer(ctx, testConfig())
+	defer server.Close()
+
+	tenantID := uuid.New()
+
+	t.Logf("\tGiven a tenant filled to the cap of %d rules", domainrules.MaxRulesPerTenant)
+	for i := 0; i < domainrules.MaxRulesPerTenant; i++ {
+		w := doJSON(t, server, http.MethodPost, "/v1/rules", tenantID, newTestRule(fmt.Sprintf("event.%d", i)))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("\t%s\tExpected 201 creating rule %d, got %d: %s", fail, i, w.Code, w.Body.String())
+		}
+	}
+
+	t.Log("\tWhen creating one rule past the cap")
+	overW := doJSON(t, server, http.MethodPost, "/v1/rules", tenantID, newTestRule("event.overflow"))
+	if overW.Code != http.StatusConflict {
+		t.Fatalf("\t%s\tExpected 409 past the cap, got %d: %s", fail, overW.Code, overW.Body.String())
+	}
+
+	t.Log("\tThen the store must still hold exactly the cap")
+	rs, err := ruleStore.ListRules(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("\t%s\tListRules: %v", fail, err)
+	}
+	if len(rs) != domainrules.MaxRulesPerTenant {
+		t.Fatalf("\t%s\tExpected %d rules at the cap, got %d", fail, domainrules.MaxRulesPerTenant, len(rs))
+	}
+	t.Logf("\t%s\tRules-per-tenant cap enforced with 409, store unchanged at cap", pass)
 }
