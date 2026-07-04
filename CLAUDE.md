@@ -47,6 +47,7 @@ Consequence: `POST /v1/events` returns **202 Accepted before anything is persist
 - `internal/storage/` — `Storage` interface (WriteBlock/FetchBlock/FetchBlocks over `Block`s, always tenant-scoped) plus the memory implementation in `memory/`. Postgres is the intended second backend (`db/db.go`, `db/schema.sql`) but is **not wired into the service yet** — `service.Run` hardcodes `memory.New()`.
 - `service/` — composes storage + HTTP handler + graceful shutdown; `cmd/ledgerly/` is signal handling only.
 - `internal/cli/` + `cmd/ledgerly-cli/` — the `ledgerly-cli` client (cobra): `token`, `events post`, `export`, `verify`. Command logic lives in `internal/cli` with injectable `Deps{HTTPClient, Now}`; `cmd/ledgerly-cli/main.go` only wires real deps and exits via `cli.Run`. Build with `make build-cli`.
+- `sdk/go/` — the Go SDK (issue #26), a **separate Go module** (`github.com/kurisu1024/ledgerly/sdk/go`, zero dependency on the server module) joined to the repo via `go.work`; tested by `make test-sdk` / `cd sdk/go && go test -race ./...`. See `sdk/go/README.md`.
 
 ### Multi-tenancy
 
