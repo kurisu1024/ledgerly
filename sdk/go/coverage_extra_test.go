@@ -361,6 +361,64 @@ func TestBuffer_CorruptTailTruncatedOnOpen(t *testing.T) {
 	}
 }
 
+func TestBuffer_TornCompactionStaleCursor_ClampedOnReopen(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate a crash between compaction's Truncate(0) and its cursor
+	// rewrite: an empty segment on disk with a cursor still holding the
+	// pre-compaction ack count.
+	if err := os.WriteFile(filepath.Join(dir, segmentFile), nil, 0o600); err != nil {
+		t.Fatalf("seeding empty segment: %v", err)
+	}
+	cf, err := os.OpenFile(filepath.Join(dir, cursorFile), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatalf("seeding cursor: %v", err)
+	}
+	if err := writeCounter(cf, 3); err != nil {
+		t.Fatalf("writing stale cursor: %v", err)
+	}
+	if err := cf.Close(); err != nil {
+		t.Fatalf("closing seeded cursor: %v", err)
+	}
+
+	b, err := openBuffer(dir)
+	if err != nil {
+		t.Fatalf("openBuffer: %v", err)
+	}
+	for _, rec := range []string{`{"n":1}`, `{"n":2}`} {
+		if err := b.append([]byte(rec)); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	records, err := b.replay()
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected the stale cursor to be clamped so post-restart spills replay, got %d records: %q", len(records), records)
+	}
+	if err := b.close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// The clamp must be persisted: a further reopen must still replay both.
+	reopened, err := openBuffer(dir)
+	if err != nil {
+		t.Fatalf("re-openBuffer: %v", err)
+	}
+	records, err = reopened.replay()
+	if err != nil {
+		t.Fatalf("replay after reopen: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected the clamped cursor to persist across reopen, got %d records: %q", len(records), records)
+	}
+	if err := reopened.close(); err != nil {
+		t.Fatalf("close after reopen: %v", err)
+	}
+}
+
 func TestJittered_StaysWithinHalfToFullRange(t *testing.T) {
 	d := 100 * time.Millisecond
 	for range 100 {

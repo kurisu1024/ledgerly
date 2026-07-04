@@ -68,6 +68,28 @@ func openBuffer(dir string) (*buffer, error) {
 		return nil, fmt.Errorf("ledgerly: reading buffer cursor: %w", err)
 	}
 	b.acked = int(acked)
+
+	// A crash between compaction's Truncate(0) and its cursor rewrite (see
+	// ack) leaves the cursor pointing past the now-shorter segment. That
+	// state is only reachable post-compaction — every line present was
+	// spilled after the truncate and is unacked — so clamp to zero and
+	// persist, or those records would silently never replay. Replaying from
+	// the start is safe: delivery is at-least-once and duplicates share
+	// instance-id+seq.
+	lines, err := b.linesLocked()
+	if err != nil {
+		_ = f.Close()
+		_ = cursorF.Close()
+		return nil, err
+	}
+	if b.acked > len(lines) {
+		b.acked = 0
+		if err := writeCounter(cursorF, 0); err != nil {
+			_ = f.Close()
+			_ = cursorF.Close()
+			return nil, fmt.Errorf("ledgerly: resetting stale buffer cursor: %w", err)
+		}
+	}
 	return b, nil
 }
 
