@@ -18,6 +18,17 @@ type contextKey string
 
 const tenantIDKey contextKey = "tenantID"
 
+// subjectKey stashes the JWT's sub claim in the request context — the
+// actor for rule-mutation audit events (ADR-0002) and, more generally, any
+// handler that needs to attribute an action to a caller rather than just a
+// tenant.
+//
+// NOTE: authMiddleware does not populate this yet (RED). In dev mode
+// (AllowUnverifiedJWT, no signature check) the sub claim is entirely
+// caller-controlled — flagged for security review once this lands for
+// real, same caveat as the rest of decodeUnverifiedJWT.
+const subjectKey contextKey = "subject"
+
 // jwtLeeway absorbs small clock skew between the token issuer and this server
 // when validating exp/nbf/iat.
 const jwtLeeway = 30 * time.Second
@@ -139,4 +150,17 @@ func getTenantID(ctx context.Context) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("tenant ID not found in context")
 	}
 	return tenantID, nil
+}
+
+// getSubject extracts the JWT sub claim stashed in the request context by
+// authMiddleware.
+//
+// STUB: authMiddleware does not stash subjectKey yet, so this always
+// errors until GREEN wires it up. See TestAuthMiddleware_PropagatesSubject.
+func getSubject(ctx context.Context) (string, error) {
+	subject, ok := ctx.Value(subjectKey).(string)
+	if !ok {
+		return "", fmt.Errorf("subject not found in context")
+	}
+	return subject, nil
 }
