@@ -21,7 +21,17 @@ func newTokenCmd(deps Deps) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Generate a development JWT for authenticating with the Ledgerly API",
+		Short: "Generate an UNSIGNED development JWT (dev servers only)",
+		Long: `DEV ONLY: mints an UNSIGNED token — the signature segment is a dummy value.
+
+It is only accepted by servers explicitly configured with AllowUnverifiedJWT=true
+(the dev posture of "make run"). Never use it against a production Ledgerly
+deployment; a production server must reject it. The tenant_id claim is caller-
+chosen, so this token proves nothing about identity.
+
+The bare token is written to stdout (pipeable); the warning goes to stderr.
+Prefer passing tokens via the LEDGERLY_TOKEN environment variable over --token
+on shared hosts — flag values are visible in shell history and process lists.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToken(cmd, deps, tenantID, ttl)
 		},
@@ -61,6 +71,7 @@ func runToken(cmd *cobra.Command, deps Deps, tenantID string, ttl time.Duration)
 	}
 	signature := base64.RawURLEncoding.EncodeToString([]byte("dummy-signature"))
 
+	fmt.Fprintln(cmd.ErrOrStderr(), "warning: UNSIGNED dev token — only valid against servers running with AllowUnverifiedJWT=true; never use in production")
 	fmt.Fprintln(cmd.OutOrStdout(), signingString+"."+signature)
 	return nil
 }

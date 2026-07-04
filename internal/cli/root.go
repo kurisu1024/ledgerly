@@ -75,7 +75,7 @@ func NewRootCmd(deps Deps) *cobra.Command {
 	root.PersistentFlags().StringVar(&conn.serverURLFlag, "server-url", "",
 		"Ledgerly server base URL (env "+EnvServerURL+")")
 	root.PersistentFlags().StringVar(&conn.tokenFlag, "token", "",
-		"Bearer token for authentication (env "+EnvToken+")")
+		"Bearer token for authentication (prefer env "+EnvToken+" on shared hosts; flag values leak into shell history and process lists)")
 
 	root.AddCommand(newTokenCmd(deps))
 	root.AddCommand(newEventsCmd(deps, conn))
