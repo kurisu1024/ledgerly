@@ -66,7 +66,13 @@ verification) so no dispatch can forget them. Any installed specialist executor 
 relevant installed skills** (golang-*, frontend/react patterns) — skills are the
 hard requirement, agent branding is the convenience. Every build/fix executor
 must list the skills it invoked in its return; the dispatch-log audit flags
-skill gaps, not agent names.
+skill gaps, not agent names. The stage+surface → expected-skills mapping lives
+in `skill-matrix.json` (this directory) — the single source both dispatchers
+and the compliance auditor consume.
+
+**RED return contract:** the RED dispatch returns the test files created, the
+test count, the failing-run output proving RED, and which plan items each test
+pins. The orchestrator verifies that failure output before dispatching GREEN.
 
 `make test` is the canonical check (keep `-p=1`). Frontend gets its own test
 runner under `web/` once scaffolded; wire it into `make test`.
@@ -78,8 +84,12 @@ runner under `web/` once scaffolded; wire it into `make test`.
 | Go changes | `ecc:go-reviewer` |
 | React / TypeScript changes | `react-reviewer` |
 | Auth, JWT, tenant-isolation, or crypto diffs | `ecc:security-reviewer` (in addition to the language reviewer) |
+| Delegated whole-PR review (autonomous loop) | `ledgerly-pr-watcher` sweeps PR state; `ledgerly-pr-reviewer` reviews and returns a strict `VERDICT:` line (project agents, `.claude/agents/`) |
 
-CRITICAL/HIGH findings block the merge; the executor fixes and re-reviews.
+CRITICAL/HIGH findings block the merge; the executor fixes and re-reviews —
+capped at 2 re-review cycles, after which the issue goes `ready-for-human`.
+CI (`.github/workflows/ci.yml`: `test` + `test-postgres`) is a required check
+on `main`, so the platform enforces green independently of any agent's report.
 
 ### 5. Fix & unblock
 

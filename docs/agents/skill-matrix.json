@@ -1,0 +1,206 @@
+{
+  "_comment": "Chris-approved skill assignment (2026-07-04). Source of truth for skills_expected in .claude/loop-dispatch-log.jsonl. Consumed by ledgerly-compliance-auditor.",
+  "stages": {
+    "green": {
+      "go": {
+        "always": [
+          "cc-skills-golang:golang-code-style",
+          "cc-skills-golang:golang-error-handling",
+          "cc-skills-golang:golang-naming"
+        ],
+        "by_task": {
+          "new types/interfaces": ["cc-skills-golang:golang-structs-interfaces"],
+          "CLI": ["cc-skills-golang:golang-spf13-cobra"],
+          "storage": ["cc-skills-golang:golang-database", "ecc:postgres-patterns"],
+          "worker/SDK": ["cc-skills-golang:golang-concurrency", "cc-skills-golang:golang-context"],
+          "slog work": ["cc-skills-golang:golang-samber-slog", "cc-skills-golang:golang-observability"],
+          "pre-commit": ["cc-skills-golang:golang-safety", "cc-skills-golang:golang-lint"]
+        }
+      },
+      "cli": {
+        "always": [
+          "cc-skills-golang:golang-code-style",
+          "cc-skills-golang:golang-error-handling",
+          "cc-skills-golang:golang-naming"
+        ],
+        "by_task": {
+          "new types/interfaces": ["cc-skills-golang:golang-structs-interfaces"],
+          "CLI": ["cc-skills-golang:golang-spf13-cobra"],
+          "storage": ["cc-skills-golang:golang-database", "ecc:postgres-patterns"],
+          "worker/SDK": ["cc-skills-golang:golang-concurrency", "cc-skills-golang:golang-context"],
+          "slog work": ["cc-skills-golang:golang-samber-slog", "cc-skills-golang:golang-observability"],
+          "pre-commit": ["cc-skills-golang:golang-safety", "cc-skills-golang:golang-lint"]
+        }
+      },
+      "web": {
+        "always": [
+          "ecc:frontend-patterns",
+          "dev-workflows-fullstack:typescript-rules",
+          "skills:react-native-best-practices"
+        ],
+        "by_task": {
+          "react components/testing": ["ecc:react-patterns", "ecc:react-testing"],
+          "performance": ["ecc:react-performance"],
+          "accessibility": ["ecc:frontend-a11y"],
+          "vite/build": ["ecc:vite-patterns"],
+          "styling": ["cc-skills:frontend-design-deslop", "ecc:frontend-design-direction"]
+        }
+      }
+    },
+    "fix": {
+      "go": {
+        "always": [
+          "cc-skills-golang:golang-code-style",
+          "cc-skills-golang:golang-error-handling",
+          "cc-skills-golang:golang-naming"
+        ],
+        "by_task": {
+          "new types/interfaces": ["cc-skills-golang:golang-structs-interfaces"],
+          "CLI": ["cc-skills-golang:golang-spf13-cobra"],
+          "storage": ["cc-skills-golang:golang-database", "ecc:postgres-patterns"],
+          "worker/SDK": ["cc-skills-golang:golang-concurrency", "cc-skills-golang:golang-context"],
+          "slog work": ["cc-skills-golang:golang-samber-slog", "cc-skills-golang:golang-observability"],
+          "pre-commit": ["cc-skills-golang:golang-safety", "cc-skills-golang:golang-lint"]
+        }
+      },
+      "cli": {
+        "always": [
+          "cc-skills-golang:golang-code-style",
+          "cc-skills-golang:golang-error-handling",
+          "cc-skills-golang:golang-naming"
+        ],
+        "by_task": {
+          "new types/interfaces": ["cc-skills-golang:golang-structs-interfaces"],
+          "CLI": ["cc-skills-golang:golang-spf13-cobra"],
+          "storage": ["cc-skills-golang:golang-database", "ecc:postgres-patterns"],
+          "worker/SDK": ["cc-skills-golang:golang-concurrency", "cc-skills-golang:golang-context"],
+          "slog work": ["cc-skills-golang:golang-samber-slog", "cc-skills-golang:golang-observability"],
+          "pre-commit": ["cc-skills-golang:golang-safety", "cc-skills-golang:golang-lint"]
+        }
+      },
+      "web": {
+        "always": [
+          "ecc:frontend-patterns",
+          "dev-workflows-fullstack:typescript-rules",
+          "skills:react-native-best-practices"
+        ],
+        "by_task": {
+          "react components/testing": ["ecc:react-patterns", "ecc:react-testing"],
+          "performance": ["ecc:react-performance"],
+          "accessibility": ["ecc:frontend-a11y"],
+          "vite/build": ["ecc:vite-patterns"],
+          "styling": ["cc-skills:frontend-design-deslop", "ecc:frontend-design-direction"]
+        }
+      }
+    },
+    "red": {
+      "go": {
+        "always": ["ecc:tdd-workflow", "cc-skills-golang:golang-testing"],
+        "by_task": {
+          "e2e": [
+            "dev-workflows-fullstack:testing-principles",
+            "dev-workflows-fullstack:integration-e2e-testing"
+          ]
+        }
+      },
+      "cli": {
+        "always": ["ecc:tdd-workflow", "cc-skills-golang:golang-testing"],
+        "by_task": {
+          "e2e": [
+            "dev-workflows-fullstack:testing-principles",
+            "dev-workflows-fullstack:integration-e2e-testing"
+          ]
+        }
+      },
+      "web": {
+        "always": ["ecc:tdd-workflow", "ecc:react-testing"],
+        "by_task": {
+          "e2e": [
+            "dev-workflows-fullstack:testing-principles",
+            "dev-workflows-fullstack:integration-e2e-testing"
+          ]
+        }
+      }
+    },
+    "plan": {
+      "all": {
+        "always": [
+          "ecc:architecture-decision-records",
+          "codebase-design",
+          "domain-modeling"
+        ],
+        "by_task": {
+          "API design": ["ecc:api-design", "ecc:backend-patterns"],
+          "Go structure": ["cc-skills-golang:golang-project-layout", "cc-skills-golang:golang-design-patterns"],
+          "storage": ["ecc:postgres-patterns"]
+        }
+      }
+    },
+    "pm": {
+      "all": {
+        "always": ["ecc:market-research"],
+        "by_task": {
+          "as relevant": [
+            "deep-research",
+            "ecc:product-lens",
+            "ecc:product-capability",
+            "bigbrain-recall"
+          ]
+        }
+      }
+    },
+    "debug": {
+      "all": {
+        "always": ["superpowers:systematic-debugging"],
+        "by_task": {
+          "as relevant": ["diagnosing-bugs", "cc-skills-golang:golang-troubleshooting"]
+        }
+      }
+    },
+    "build-resolvers": {
+      "go": {
+        "always": ["cc-skills-golang:golang-lint", "cc-skills-golang:golang-dependency-management"],
+        "by_task": {}
+      },
+      "web": {
+        "always": ["ecc:vite-patterns"],
+        "by_task": {}
+      }
+    },
+    "maintain": {
+      "all": {
+        "always": [],
+        "by_task": {
+          "refactor": ["cc-skills-golang:golang-modernize", "ecc:coding-standards"],
+          "docs": ["cc-skills-golang:golang-documentation", "dev-workflows-fullstack:documentation-criteria"]
+        }
+      }
+    },
+    "watch": {
+      "all": {
+        "always": ["resolving-merge-conflicts", "ecc:git-workflow"],
+        "by_task": {}
+      }
+    },
+    "audit": {
+      "all": {
+        "always": [],
+        "by_task": {},
+        "_note": "Deliberately skill-free."
+      }
+    },
+    "reviewers": {
+      "all": {
+        "always": [],
+        "by_task": {},
+        "optional": [
+          "cc-skills-golang:golang-security",
+          "cc-skills-golang:golang-performance",
+          "ecc:frontend-a11y",
+          "security-review"
+        ]
+      }
+    }
+  },
+  "banned": ["cc-skills:conventional-git"]
+}
