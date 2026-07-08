@@ -37,3 +37,8 @@ export.json
 
 # Built CLI binaries
 bin/
+
+.claude
+.scratch
+docs/agents
+.tenant_id 
